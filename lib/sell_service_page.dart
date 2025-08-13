@@ -28,29 +28,41 @@ class _SellServicePageState extends State<SellServicePage> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You must be logged in to sell a service')),
+        const SnackBar(
+          content: Text('You must be logged in to sell a service'),
+        ),
       );
       return;
     }
 
+    final ownerEmail = user.email ?? 'anonymous@user';
+    final ownerName =
+        (user.displayName != null && user.displayName!.trim().isNotEmpty)
+        ? user.displayName!.trim()
+        : (user.email != null ? user.email!.split('@').first : 'Anonymous');
+
     await FirebaseFirestore.instance.collection('services').add({
       'ownerId': user.uid,
-      'ownerEmail': user.email ?? 'Unknown',
+      'ownerEmail': ownerEmail,
+      'ownerName': ownerName,
       'category': _category,
       'name': _serviceName,
       'description': _description,
       'priceMin': _priceMin,
       'priceMax': _priceMax,
       'location': _location,
-      'ratings': [], // store list of ratings
       'timestamp': FieldValue.serverTimestamp(),
+      // optional cached fields (not strictly needed, but useful later)
+      'avgRating': 0.0,
+      'ratingsCount': 0,
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Service saved successfully!')),
-    );
-
-    Navigator.pop(context);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Service saved successfully!')),
+      );
+      Navigator.pop(context);
+    }
   }
 
   @override
@@ -92,7 +104,9 @@ class _SellServicePageState extends State<SellServicePage> {
               TextFormField(
                 controller: _priceMinController,
                 decoration: const InputDecoration(labelText: 'Price Min'),
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 validator: (val) {
                   if (val == null || val.isEmpty) return 'Enter minimum price';
                   if (double.tryParse(val) == null) return 'Enter valid number';
@@ -103,7 +117,9 @@ class _SellServicePageState extends State<SellServicePage> {
               TextFormField(
                 controller: _priceMaxController,
                 decoration: const InputDecoration(labelText: 'Price Max'),
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 validator: (val) {
                   if (val == null || val.isEmpty) return 'Enter maximum price';
                   if (double.tryParse(val) == null) return 'Enter valid number';
