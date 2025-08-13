@@ -5,6 +5,21 @@ import 'package:firebase_auth/firebase_auth.dart';
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
 
+  double _calculateAverageRating(List<dynamic>? ratings) {
+    if (ratings == null || ratings.isEmpty) return 0;
+    double sum = ratings.fold(0, (prev, rating) => prev + rating);
+    return sum / ratings.length;
+  }
+
+  Future<void> _rateService(String serviceId, double rating) async {
+    final serviceRef = FirebaseFirestore.instance
+        .collection('services')
+        .doc(serviceId);
+    await serviceRef.update({
+      'ratings': FieldValue.arrayUnion([rating]),
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
@@ -57,14 +72,69 @@ class HomePage extends StatelessWidget {
                   itemBuilder: (context, index) {
                     final service = services[index];
                     final data = service.data()! as Map<String, dynamic>;
+                    final avgRating = _calculateAverageRating(data['ratings']);
 
                     return Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      margin: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       child: ListTile(
                         title: Text(data['name'] ?? ''),
                         subtitle: Text(
-                            '${data['category'] ?? ''} | ${data['location'] ?? ''}\nPrice: ${data['priceMin'] ?? ''} - ${data['priceMax'] ?? ''}\n${data['description'] ?? ''}'),
+                          '${data['category'] ?? ''} | ${data['location'] ?? ''}\n'
+                          'Price: ${data['priceMin']} - ${data['priceMax']}\n'
+                          'By: ${data['ownerEmail'] ?? 'Unknown'}\n'
+                          'Rating: ${avgRating.toStringAsFixed(1)} ⭐\n'
+                          '${data['description'] ?? ''}',
+                        ),
                         isThreeLine: true,
+                        trailing: IconButton(
+                          icon: const Icon(Icons.star, color: Colors.amber),
+                          onPressed: () {
+                            showDialog(
+                              context: context,
+                              builder: (context) {
+                                double selectedRating = 3;
+                                return AlertDialog(
+                                  title: const Text('Rate Service'),
+                                  content: StatefulBuilder(
+                                    builder: (context, setState) {
+                                      return Slider(
+                                        value: selectedRating,
+                                        min: 1,
+                                        max: 5,
+                                        divisions: 4,
+                                        label: selectedRating.toString(),
+                                        onChanged: (val) {
+                                          setState(() {
+                                            selectedRating = val;
+                                          });
+                                        },
+                                      );
+                                    },
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(context),
+                                      child: const Text('Cancel'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () async {
+                                        await _rateService(
+                                          service.id,
+                                          selectedRating,
+                                        );
+                                        Navigator.pop(context);
+                                      },
+                                      child: const Text('Submit'),
+                                    ),
+                                  ],
+                                );
+                              },
+                            );
+                          },
+                        ),
                       ),
                     );
                   },
