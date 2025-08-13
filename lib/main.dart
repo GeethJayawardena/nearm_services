@@ -6,6 +6,7 @@ import 'login_choice_page.dart';
 import 'email_login_page.dart';
 import 'home_page.dart';
 import 'sell_service_page.dart';
+import 'create_account_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -35,6 +36,7 @@ class MyApp extends StatelessWidget {
           }
         },
         '/login-email': (context) => const EmailLoginPage(),
+        '/create-account': (context) => const CreateAccountPage(),
         '/home': (context) => const HomePage(),
         '/sell-service': (context) => const SellServicePage(),
       },
