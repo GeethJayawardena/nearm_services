@@ -18,7 +18,7 @@ class HomePage extends StatelessWidget {
             icon: const Icon(Icons.logout),
             onPressed: () async {
               await auth.signOut();
-              Navigator.pushReplacementNamed(context, '/login');
+              Navigator.pushReplacementNamed(context, '/');
             },
           ),
         ],
@@ -96,7 +96,6 @@ class HomePage extends StatelessWidget {
   }
 }
 
-/// Small line showing "⭐ 4.3 (12)"
 class AverageRatingLine extends StatelessWidget {
   final String serviceId;
   const AverageRatingLine({super.key, required this.serviceId});

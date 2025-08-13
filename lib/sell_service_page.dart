@@ -26,18 +26,10 @@ class _SellServicePageState extends State<SellServicePage> {
     _formKey.currentState!.save();
 
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('You must be logged in to sell a service'),
-        ),
-      );
-      return;
-    }
+    if (user == null) return;
 
     final ownerEmail = user.email ?? 'anonymous@user';
-    final ownerName =
-        (user.displayName != null && user.displayName!.trim().isNotEmpty)
+    final ownerName = (user.displayName != null && user.displayName!.trim().isNotEmpty)
         ? user.displayName!.trim()
         : (user.email != null ? user.email!.split('@').first : 'Anonymous');
 
@@ -52,9 +44,6 @@ class _SellServicePageState extends State<SellServicePage> {
       'priceMax': _priceMax,
       'location': _location,
       'timestamp': FieldValue.serverTimestamp(),
-      // optional cached fields (not strictly needed, but useful later)
-      'avgRating': 0.0,
-      'ratingsCount': 0,
     });
 
     if (mounted) {
@@ -85,28 +74,23 @@ class _SellServicePageState extends State<SellServicePage> {
               TextFormField(
                 decoration: const InputDecoration(labelText: 'Category'),
                 onSaved: (val) => _category = val!.trim(),
-                validator: (val) =>
-                    val == null || val.isEmpty ? 'Enter category' : null,
+                validator: (val) => val == null || val.isEmpty ? 'Enter category' : null,
               ),
               TextFormField(
                 decoration: const InputDecoration(labelText: 'Service Name'),
                 onSaved: (val) => _serviceName = val!.trim(),
-                validator: (val) =>
-                    val == null || val.isEmpty ? 'Enter service name' : null,
+                validator: (val) => val == null || val.isEmpty ? 'Enter service name' : null,
               ),
               TextFormField(
                 decoration: const InputDecoration(labelText: 'Description'),
                 maxLines: 3,
                 onSaved: (val) => _description = val!.trim(),
-                validator: (val) =>
-                    val == null || val.isEmpty ? 'Enter description' : null,
+                validator: (val) => val == null || val.isEmpty ? 'Enter description' : null,
               ),
               TextFormField(
                 controller: _priceMinController,
                 decoration: const InputDecoration(labelText: 'Price Min'),
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 validator: (val) {
                   if (val == null || val.isEmpty) return 'Enter minimum price';
                   if (double.tryParse(val) == null) return 'Enter valid number';
@@ -117,9 +101,7 @@ class _SellServicePageState extends State<SellServicePage> {
               TextFormField(
                 controller: _priceMaxController,
                 decoration: const InputDecoration(labelText: 'Price Max'),
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 validator: (val) {
                   if (val == null || val.isEmpty) return 'Enter maximum price';
                   if (double.tryParse(val) == null) return 'Enter valid number';
@@ -135,8 +117,7 @@ class _SellServicePageState extends State<SellServicePage> {
               TextFormField(
                 decoration: const InputDecoration(labelText: 'Location'),
                 onSaved: (val) => _location = val!.trim(),
-                validator: (val) =>
-                    val == null || val.isEmpty ? 'Enter location' : null,
+                validator: (val) => val == null || val.isEmpty ? 'Enter location' : null,
               ),
               const SizedBox(height: 20),
               ElevatedButton(

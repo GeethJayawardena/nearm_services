@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+
+import 'login_choice_page.dart';
+import 'email_login_page.dart';
 import 'home_page.dart';
 import 'sell_service_page.dart';
-import 'email_login_page.dart';
-import 'service_details_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,11 +21,20 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'NearMe Services',
       debugShowCheckedModeBanner: false,
-      initialRoute: FirebaseAuth.instance.currentUser == null
-          ? '/login'
-          : '/home',
+      // Show LoginChoicePage first
+      initialRoute: '/',
       routes: {
-        '/login': (context) => const EmailLoginPage(),
+        '/': (context) {
+          final user = FirebaseAuth.instance.currentUser;
+          if (user == null) {
+            // Not logged in → show login choice
+            return const LoginChoicePage();
+          } else {
+            // Logged in → go to home
+            return const HomePage();
+          }
+        },
+        '/login-email': (context) => const EmailLoginPage(),
         '/home': (context) => const HomePage(),
         '/sell-service': (context) => const SellServicePage(),
       },
