@@ -13,33 +13,41 @@ class ServiceDetailsPage extends StatefulWidget {
 
 class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
   double _rating = 0;
+  Map<String, dynamic>? _requestData;
+  String? _ownerId;
 
-  Future<Map<String, dynamic>?> _fetchUserRequest() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return null;
-
-    final doc = await FirebaseFirestore.instance
-        .collection('services')
-        .doc(widget.serviceId)
-        .collection('requests')
-        .doc(user.uid)
-        .get();
-
-    if (!doc.exists) return null;
-    return doc.data()!;
+  @override
+  void initState() {
+    super.initState();
+    _loadServiceData();
   }
 
-  Future<void> _requestBooking() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
+  Future<void> _loadServiceData() async {
     final serviceDoc = await FirebaseFirestore.instance
         .collection('services')
         .doc(widget.serviceId)
         .get();
     if (!serviceDoc.exists) return;
 
-    final ownerId = serviceDoc['ownerId'];
+    _ownerId = serviceDoc['ownerId'];
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      final requestDoc = await FirebaseFirestore.instance
+          .collection('services')
+          .doc(widget.serviceId)
+          .collection('requests')
+          .doc(user.uid)
+          .get();
+      setState(() {
+        _requestData = requestDoc.exists ? requestDoc.data()! : null;
+      });
+    }
+  }
+
+  Future<void> _requestBooking() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || _ownerId == null) return;
 
     await FirebaseFirestore.instance
         .collection('services')
@@ -53,9 +61,8 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
           'timestamp': FieldValue.serverTimestamp(),
         });
 
-    // Notify owner
     await FirebaseFirestore.instance.collection('notifications').add({
-      'ownerId': ownerId,
+      'ownerId': _ownerId,
       'serviceId': widget.serviceId,
       'userId': user.uid,
       'type': 'booking_request',
@@ -63,14 +70,28 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
       'timestamp': FieldValue.serverTimestamp(),
     });
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Booking request sent! Waiting for approval.'),
-        ),
-      );
-      setState(() {}); // Refresh UI to show pending status
-    }
+    setState(() {
+      _requestData = {
+        'userId': user.uid,
+        'userEmail': user.email,
+        'status': 'pending',
+      };
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Booking requested! You can now chat.')),
+    );
+  }
+
+  void _openChat() {
+    if (_ownerId == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            ChatPage(serviceId: widget.serviceId, otherUserId: _ownerId!),
+      ),
+    );
   }
 
   Future<void> _submitRating() async {
@@ -89,11 +110,9 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
           'userEmail': user.email,
         });
 
-    if (mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Rating submitted!')));
-    }
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Rating submitted!')));
   }
 
   @override
@@ -115,7 +134,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
 
           final data = snap.data!.data()! as Map<String, dynamic>;
           final ownerName = data['ownerName'] ?? '';
-          final ownerEmail = data['ownerEmail'] ?? '';
+          _ownerId = data['ownerId'];
 
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -132,7 +151,9 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
               const SizedBox(height: 6),
               Text('Price Range: ${data['priceMin']} - ${data['priceMax']}'),
               const SizedBox(height: 6),
-              Text('Owner: ${ownerName.isNotEmpty ? ownerName : ownerEmail}'),
+              Text(
+                'Owner: ${ownerName.isNotEmpty ? ownerName : data['ownerEmail']}',
+              ),
               const SizedBox(height: 8),
               _AverageRatingBlock(serviceId: widget.serviceId),
               const SizedBox(height: 16),
@@ -145,54 +166,38 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
               const SizedBox(height: 20),
 
               // Booking / Chat button
-              FutureBuilder<Map<String, dynamic>?>(
-                future: _fetchUserRequest(),
-                builder: (context, requestSnap) {
-                  final requestData = requestSnap.data;
-
-                  if (requestData == null) {
-                    // No request yet → show booking button
-                    return ElevatedButton(
-                      onPressed: _requestBooking,
-                      child: const Text('Request Booking'),
-                    );
-                  }
-
-                  if (requestData['status'] == 'pending') {
-                    return ElevatedButton(
-                      onPressed: null,
-                      child: const Text('Booking Pending'),
-                    );
-                  }
-
-                  if (requestData['status'] == 'approved') {
-                    return ElevatedButton.icon(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => ChatPage(
-                              serviceId: widget.serviceId,
-                              otherUserId: data['ownerId'],
-                            ),
-                          ),
-                        );
-                      },
+              if (_requestData == null)
+                ElevatedButton(
+                  onPressed: _requestBooking,
+                  child: const Text('Request Booking'),
+                ),
+              if (_requestData != null)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ElevatedButton.icon(
+                      onPressed: _openChat,
                       icon: const Icon(Icons.chat),
-                      label: const Text('Chat with Seller'),
-                    );
-                  }
-
-                  if (requestData['status'] == 'rejected') {
-                    return ElevatedButton(
-                      onPressed: null,
-                      child: const Text('Booking Rejected'),
-                    );
-                  }
-
-                  return const SizedBox.shrink();
-                },
-              ),
+                      label: Text(
+                        _requestData!['status'] == 'pending'
+                            ? 'Chat with Seller (Pending)'
+                            : 'Chat with Seller',
+                      ),
+                    ),
+                    if (_requestData!['status'] == 'pending')
+                      const SizedBox(height: 4),
+                    if (_requestData!['status'] == 'rejected')
+                      const Text(
+                        'Booking Rejected',
+                        style: TextStyle(color: Colors.red),
+                      ),
+                    if (_requestData!['status'] == 'approved')
+                      const Text(
+                        'Booking Approved',
+                        style: TextStyle(color: Colors.green),
+                      ),
+                  ],
+                ),
 
               const Divider(height: 32),
               const Text(
