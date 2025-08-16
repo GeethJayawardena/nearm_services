@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'chat_page.dart';
 
 class ServiceDetailsPage extends StatefulWidget {
   final String serviceId;
@@ -13,20 +14,62 @@ class ServiceDetailsPage extends StatefulWidget {
 class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
   double _rating = 0;
 
-  Future<void> _bookService() async {
+  Future<Map<String, dynamic>?> _fetchUserRequest() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return null;
+
+    final doc = await FirebaseFirestore.instance
+        .collection('services')
+        .doc(widget.serviceId)
+        .collection('requests')
+        .doc(user.uid)
+        .get();
+
+    if (!doc.exists) return null;
+    return doc.data()!;
+  }
+
+  Future<void> _requestBooking() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    await FirebaseFirestore.instance.collection('bookings').add({
+    final serviceDoc = await FirebaseFirestore.instance
+        .collection('services')
+        .doc(widget.serviceId)
+        .get();
+    if (!serviceDoc.exists) return;
+
+    final ownerId = serviceDoc['ownerId'];
+
+    await FirebaseFirestore.instance
+        .collection('services')
+        .doc(widget.serviceId)
+        .collection('requests')
+        .doc(user.uid)
+        .set({
+          'userId': user.uid,
+          'userEmail': user.email,
+          'status': 'pending',
+          'timestamp': FieldValue.serverTimestamp(),
+        });
+
+    // Notify owner
+    await FirebaseFirestore.instance.collection('notifications').add({
+      'ownerId': ownerId,
       'serviceId': widget.serviceId,
       'userId': user.uid,
+      'type': 'booking_request',
+      'status': 'unread',
       'timestamp': FieldValue.serverTimestamp(),
     });
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Service booked successfully!')),
+        const SnackBar(
+          content: Text('Booking request sent! Waiting for approval.'),
+        ),
       );
+      setState(() {}); // Refresh UI to show pending status
     }
   }
 
@@ -70,7 +113,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
           if (!snap.data!.exists)
             return const Center(child: Text('Service not found.'));
 
-          final data = snap.data!.data() as Map<String, dynamic>;
+          final data = snap.data!.data()! as Map<String, dynamic>;
           final ownerName = data['ownerName'] ?? '';
           final ownerEmail = data['ownerEmail'] ?? '';
 
@@ -100,10 +143,57 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
               const SizedBox(height: 6),
               Text(data['description'] ?? ''),
               const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: _bookService,
-                child: const Text('Book Service'),
+
+              // Booking / Chat button
+              FutureBuilder<Map<String, dynamic>?>(
+                future: _fetchUserRequest(),
+                builder: (context, requestSnap) {
+                  final requestData = requestSnap.data;
+
+                  if (requestData == null) {
+                    // No request yet → show booking button
+                    return ElevatedButton(
+                      onPressed: _requestBooking,
+                      child: const Text('Request Booking'),
+                    );
+                  }
+
+                  if (requestData['status'] == 'pending') {
+                    return ElevatedButton(
+                      onPressed: null,
+                      child: const Text('Booking Pending'),
+                    );
+                  }
+
+                  if (requestData['status'] == 'approved') {
+                    return ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ChatPage(
+                              serviceId: widget.serviceId,
+                              otherUserId: data['ownerId'],
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.chat),
+                      label: const Text('Chat with Seller'),
+                    );
+                  }
+
+                  if (requestData['status'] == 'rejected') {
+                    return ElevatedButton(
+                      onPressed: null,
+                      child: const Text('Booking Rejected'),
+                    );
+                  }
+
+                  return const SizedBox.shrink();
+                },
               ),
+
               const Divider(height: 32),
               const Text(
                 'Rate this service',
@@ -160,10 +250,7 @@ class _AverageRatingBlock extends StatelessWidget {
           sum += (m['rating'] ?? 0).toDouble();
         }
         final avg = sum / docs.length;
-        return Text(
-          '⭐ ${avg.toStringAsFixed(1)} (${docs.length} ratings)',
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        );
+        return Text('⭐ ${avg.toStringAsFixed(1)} (${docs.length})');
       },
     );
   }

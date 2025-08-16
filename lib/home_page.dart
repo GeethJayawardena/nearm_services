@@ -2,24 +2,75 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'service_details_page.dart';
+import 'seller_dashboard_page.dart';
 
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  bool _isSeller = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkIfSeller();
+  }
+
+  Future<void> _checkIfSeller() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final query = await FirebaseFirestore.instance
+        .collection('services')
+        .where('ownerId', isEqualTo: user.uid)
+        .limit(1)
+        .get();
+
+    if (query.docs.isNotEmpty) {
+      setState(() => _isSeller = true);
+    }
+  }
+
+  Future<void> _confirmLogout(BuildContext context) async {
     final auth = FirebaseAuth.instance;
 
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Logout"),
+        content: const Text("Are you sure you want to log out?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text("Logout"),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldLogout == true) {
+      await auth.signOut();
+      Navigator.pushReplacementNamed(context, '/');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('NearMe Services - Home'),
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
-            onPressed: () async {
-              await auth.signOut();
-              Navigator.pushReplacementNamed(context, '/');
-            },
+            onPressed: () => _confirmLogout(context),
           ),
         ],
       ),
@@ -27,11 +78,33 @@ class HomePage extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.all(8),
-            child: ElevatedButton(
-              onPressed: () {
-                Navigator.pushNamed(context, '/sell-service');
-              },
-              child: const Text('Sell a Service'),
+            child: Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pushNamed(context, '/sell-service');
+                    },
+                    child: const Text('Sell a Service'),
+                  ),
+                ),
+                if (_isSeller) ...[
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const SellerDashboardPage(),
+                          ),
+                        );
+                      },
+                      child: const Text('Seller Dashboard'),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
           Expanded(
@@ -61,15 +134,24 @@ class HomePage extends StatelessWidget {
                     final ownerEmail = data['ownerEmail'] ?? '';
 
                     return Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      margin: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       child: ListTile(
                         title: Text(data['name'] ?? ''),
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('${data['category'] ?? ''} | ${data['location'] ?? ''}'),
-                            Text('Price: ${data['priceMin'] ?? ''} - ${data['priceMax'] ?? ''}'),
-                            Text('Owner: ${ownerName.isNotEmpty ? ownerName : ownerEmail}'),
+                            Text(
+                              '${data['category'] ?? ''} | ${data['location'] ?? ''}',
+                            ),
+                            Text(
+                              'Price: ${data['priceMin'] ?? ''} - ${data['priceMax'] ?? ''}',
+                            ),
+                            Text(
+                              'Owner: ${ownerName.isNotEmpty ? ownerName : ownerEmail}',
+                            ),
                             const SizedBox(height: 4),
                             AverageRatingLine(serviceId: doc.id),
                           ],
@@ -79,7 +161,8 @@ class HomePage extends StatelessWidget {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => ServiceDetailsPage(serviceId: doc.id),
+                              builder: (_) =>
+                                  ServiceDetailsPage(serviceId: doc.id),
                             ),
                           );
                         },
