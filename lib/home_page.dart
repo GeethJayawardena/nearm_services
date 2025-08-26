@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 import 'service_details_page.dart';
 import 'seller_dashboard_page.dart';
+import 'location_selector.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -13,11 +16,41 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   bool _isSeller = false;
+  String? _userDistrict;
+  final List<String> _districts = [
+    "All Sri Lanka",
+    "Colombo",
+    "Gampaha",
+    "Kalutara",
+    "Kandy",
+    "Matale",
+    "Nuwara Eliya",
+    "Galle",
+    "Matara",
+    "Hambantota",
+    "Jaffna",
+    "Kilinochchi",
+    "Mannar",
+    "Mullaitivu",
+    "Vavuniya",
+    "Batticaloa",
+    "Ampara",
+    "Trincomalee",
+    "Kurunegala",
+    "Puttalam",
+    "Anuradhapura",
+    "Polonnaruwa",
+    "Badulla",
+    "Monaragala",
+    "Ratnapura",
+    "Kegalle",
+  ];
 
   @override
   void initState() {
     super.initState();
     _checkIfSeller();
+    _loadUserDistrict();
   }
 
   Future<void> _checkIfSeller() async {
@@ -33,6 +66,111 @@ class _HomePageState extends State<HomePage> {
     if (query.docs.isNotEmpty) {
       setState(() => _isSeller = true);
     }
+  }
+
+  Future<void> _loadUserDistrict() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final userDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .get();
+
+    if (userDoc.exists && userDoc.data()!.containsKey('district')) {
+      setState(() => _userDistrict = userDoc.data()!['district']);
+    }
+  }
+
+  Future<void> _updateUserDistrict(String district) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+      'district': district,
+    }, SetOptions(merge: true));
+
+    setState(() => _userDistrict = district);
+  }
+
+  Future<void> _detectLocation() async {
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return;
+      }
+      if (permission == LocationPermission.deniedForever) return;
+
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      final placemarks = await placemarkFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+
+      if (placemarks.isNotEmpty) {
+        final district = placemarks.first.administrativeArea ?? "Unknown";
+        if (_districts.contains(district)) {
+          await _updateUserDistrict(district);
+        }
+      }
+    } catch (e) {
+      debugPrint("Error detecting location: $e");
+    }
+  }
+
+  Future<void> _chooseLocationDialog() async {
+    String? selectedDistrict = _userDistrict;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Choose Location"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ElevatedButton.icon(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                await _detectLocation();
+              },
+              icon: const Icon(Icons.my_location),
+              label: const Text("Use Current Location (GPS)"),
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              value: selectedDistrict,
+              hint: const Text("Select District"),
+              items: _districts
+                  .map((d) => DropdownMenuItem(value: d, child: Text(d)))
+                  .toList(),
+              onChanged: (val) => selectedDistrict = val,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (selectedDistrict != null) {
+                await _updateUserDistrict(selectedDistrict!);
+              }
+              Navigator.pop(ctx);
+            },
+            child: const Text("Save"),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _confirmLogout(BuildContext context) async {
@@ -62,12 +200,41 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Stream<QuerySnapshot> _getServicesStream() {
+    final collection = FirebaseFirestore.instance
+        .collection('services')
+        .orderBy('timestamp', descending: true);
+
+    if (_userDistrict != null && _userDistrict != "All Sri Lanka") {
+      // Filter using 'location' instead of 'district'
+      return collection.where('location', isEqualTo: _userDistrict).snapshots();
+    }
+
+    // Show all services if district is null or 'All Sri Lanka'
+    return collection.snapshots();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('NearMe Services - Home'),
         actions: [
+          if (_userDistrict != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+              child: Text(
+                "📍 $_userDistrict",
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          IconButton(
+            icon: const Icon(Icons.location_on),
+            onPressed: _chooseLocationDialog,
+          ),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () => _confirmLogout(context),
@@ -82,9 +249,8 @@ class _HomePageState extends State<HomePage> {
               children: [
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.pushNamed(context, '/sell-service');
-                    },
+                    onPressed: () =>
+                        Navigator.pushNamed(context, '/sell-service'),
                     child: const Text('Sell a Service'),
                   ),
                 ),
@@ -92,14 +258,12 @@ class _HomePageState extends State<HomePage> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const SellerDashboardPage(),
-                          ),
-                        );
-                      },
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const SellerDashboardPage(),
+                        ),
+                      ),
                       child: const Text('Seller Dashboard'),
                     ),
                   ),
@@ -109,20 +273,22 @@ class _HomePageState extends State<HomePage> {
           ),
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('services')
-                  .orderBy('timestamp', descending: true)
-                  .snapshots(),
+              stream: _getServicesStream(),
               builder: (context, snap) {
-                if (snap.hasError) {
+                if (snap.hasError)
                   return Center(child: Text('Error: ${snap.error}'));
-                }
-                if (!snap.hasData) {
+                if (!snap.hasData)
                   return const Center(child: CircularProgressIndicator());
-                }
+
                 final services = snap.data!.docs;
                 if (services.isEmpty) {
-                  return const Center(child: Text('No services found.'));
+                  return Center(
+                    child: Text(
+                      _userDistrict != null
+                          ? 'No services found in $_userDistrict.'
+                          : 'No services found.',
+                    ),
+                  );
                 }
 
                 return ListView.builder(
@@ -157,15 +323,13 @@ class _HomePageState extends State<HomePage> {
                           ],
                         ),
                         isThreeLine: true,
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  ServiceDetailsPage(serviceId: doc.id),
-                            ),
-                          );
-                        },
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                ServiceDetailsPage(serviceId: doc.id),
+                          ),
+                        ),
                       ),
                     );
                   },
@@ -200,8 +364,7 @@ class AverageRatingLine extends StatelessWidget {
         double sum = 0;
         for (final d in docs) {
           final m = d.data() as Map<String, dynamic>;
-          final r = (m['rating'] ?? 0).toDouble();
-          sum += r;
+          sum += (m['rating'] ?? 0).toDouble();
         }
         final avg = sum / docs.length;
         return Text('⭐ ${avg.toStringAsFixed(1)} (${docs.length})');

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
+import 'location_selector.dart';
 
 class SellServicePage extends StatefulWidget {
   const SellServicePage({super.key});
@@ -18,18 +21,74 @@ class _SellServicePageState extends State<SellServicePage> {
   double _priceMax = 0;
   String _location = '';
 
+  bool _loadingLocation = false;
+
   final _priceMinController = TextEditingController();
   final _priceMaxController = TextEditingController();
+
+  /// 🔹 Get location automatically using GPS
+  Future<void> _detectLocation() async {
+    setState(() => _loadingLocation = true);
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied ||
+            permission == LocationPermission.deniedForever) {
+          setState(() => _loadingLocation = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location permission denied')),
+          );
+          return;
+        }
+      }
+
+      Position pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      List<Placemark> placemarks = await placemarkFromCoordinates(
+        pos.latitude,
+        pos.longitude,
+      );
+
+      if (placemarks.isNotEmpty) {
+        String? district =
+            placemarks[0].subAdministrativeArea ??
+            placemarks[0].administrativeArea ??
+            placemarks[0].locality;
+
+        if (district != null && district.isNotEmpty) {
+          setState(() => _location = district);
+        }
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to detect location: $e')));
+    } finally {
+      setState(() => _loadingLocation = false);
+    }
+  }
 
   Future<void> _saveService() async {
     if (!_formKey.currentState!.validate()) return;
     _formKey.currentState!.save();
 
+    if (_location.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select or detect a location')),
+      );
+      return;
+    }
+
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
     final ownerEmail = user.email ?? 'anonymous@user';
-    final ownerName = (user.displayName != null && user.displayName!.trim().isNotEmpty)
+    final ownerName =
+        (user.displayName != null && user.displayName!.trim().isNotEmpty)
         ? user.displayName!.trim()
         : (user.email != null ? user.email!.split('@').first : 'Anonymous');
 
@@ -42,7 +101,7 @@ class _SellServicePageState extends State<SellServicePage> {
       'description': _description,
       'priceMin': _priceMin,
       'priceMax': _priceMax,
-      'location': _location,
+      'location': _location, // ✅ Auto/manual district saved
       'timestamp': FieldValue.serverTimestamp(),
     });
 
@@ -74,25 +133,32 @@ class _SellServicePageState extends State<SellServicePage> {
               TextFormField(
                 decoration: const InputDecoration(labelText: 'Category'),
                 onSaved: (val) => _category = val!.trim(),
-                validator: (val) => val == null || val.isEmpty ? 'Enter category' : null,
+                validator: (val) =>
+                    val == null || val.isEmpty ? 'Enter category' : null,
               ),
               TextFormField(
                 decoration: const InputDecoration(labelText: 'Service Name'),
                 onSaved: (val) => _serviceName = val!.trim(),
-                validator: (val) => val == null || val.isEmpty ? 'Enter service name' : null,
+                validator: (val) =>
+                    val == null || val.isEmpty ? 'Enter service name' : null,
               ),
               TextFormField(
                 decoration: const InputDecoration(labelText: 'Description'),
                 maxLines: 3,
                 onSaved: (val) => _description = val!.trim(),
-                validator: (val) => val == null || val.isEmpty ? 'Enter description' : null,
+                validator: (val) =>
+                    val == null || val.isEmpty ? 'Enter description' : null,
               ),
               TextFormField(
                 controller: _priceMinController,
                 decoration: const InputDecoration(labelText: 'Price Min'),
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 validator: (val) {
-                  if (val == null || val.isEmpty) return 'Enter minimum price';
+                  if (val == null || val.isEmpty) {
+                    return 'Enter minimum price';
+                  }
                   if (double.tryParse(val) == null) return 'Enter valid number';
                   return null;
                 },
@@ -101,9 +167,13 @@ class _SellServicePageState extends State<SellServicePage> {
               TextFormField(
                 controller: _priceMaxController,
                 decoration: const InputDecoration(labelText: 'Price Max'),
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 validator: (val) {
-                  if (val == null || val.isEmpty) return 'Enter maximum price';
+                  if (val == null || val.isEmpty) {
+                    return 'Enter maximum price';
+                  }
                   if (double.tryParse(val) == null) return 'Enter valid number';
                   if (_priceMinController.text.isNotEmpty &&
                       double.tryParse(_priceMinController.text)! >
@@ -114,11 +184,33 @@ class _SellServicePageState extends State<SellServicePage> {
                 },
                 onSaved: (val) => _priceMax = double.parse(val!),
               ),
-              TextFormField(
-                decoration: const InputDecoration(labelText: 'Location'),
-                onSaved: (val) => _location = val!.trim(),
-                validator: (val) => val == null || val.isEmpty ? 'Enter location' : null,
+
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _location.isEmpty
+                          ? 'No location selected'
+                          : 'Selected: $_location',
+                    ),
+                  ),
+                  IconButton(
+                    icon: _loadingLocation
+                        ? const CircularProgressIndicator()
+                        : const Icon(Icons.my_location, color: Colors.blue),
+                    onPressed: _loadingLocation ? null : _detectLocation,
+                  ),
+                ],
               ),
+
+              // 🔹 Manual selection fallback
+              LocationSelector(
+                onLocationSelected: (district) {
+                  setState(() => _location = district);
+                },
+              ),
+
               const SizedBox(height: 20),
               ElevatedButton(
                 onPressed: _saveService,
