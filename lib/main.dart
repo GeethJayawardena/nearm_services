@@ -19,56 +19,72 @@ void main() async {
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  Future<Widget> _getInitialPage() async {
-    final user = FirebaseAuth.instance.currentUser;
-
-    if (user == null) {
-      // Not logged in → show login choice
-      return const LoginChoicePage();
-    } else {
-      // Logged in → check role
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-
-      final role = doc.data()?['role'] ?? 'user';
-
-      if (role == 'admin') {
-        return const AdminDashboard();
-      } else {
-        return const HomePage();
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'NearMe Services',
       debugShowCheckedModeBanner: false,
-      home: FutureBuilder<Widget>(
-        future: _getInitialPage(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            );
-          } else if (snapshot.hasError) {
-            return Scaffold(
-              body: Center(child: Text("Error: ${snapshot.error}")),
-            );
-          } else {
-            return snapshot.data ?? const LoginChoicePage();
-          }
-        },
-      ),
+      home: const LandingPage(),
       routes: {
+        '/login-choice': (context) => const LoginChoicePage(),
         '/login-email': (context) => const EmailLoginPage(),
         '/create-account': (context) => const CreateAccountPage(),
         '/home': (context) => const HomePage(),
         '/sell-service': (context) => const SellServicePage(),
         '/admin-dashboard': (context) => const AdminDashboard(),
+      },
+    );
+  }
+}
+
+class LandingPage extends StatelessWidget {
+  const LandingPage({super.key});
+
+  Future<Widget> _getPage(User user) async {
+    final doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .get();
+    final role = doc.data()?['role'] ?? 'user';
+
+    if (role == 'admin') return const AdminDashboard();
+    return const HomePage(); // sellers and normal users
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final user = snapshot.data;
+        if (user == null) {
+          // Not logged in
+          return const LoginChoicePage();
+        }
+
+        // Logged in → check role from Firestore
+        return FutureBuilder<Widget>(
+          future: _getPage(user),
+          builder: (context, roleSnapshot) {
+            if (roleSnapshot.connectionState == ConnectionState.waiting) {
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
+            } else if (roleSnapshot.hasError) {
+              return Scaffold(
+                body: Center(child: Text("Error: ${roleSnapshot.error}")),
+              );
+            } else {
+              return roleSnapshot.data!;
+            }
+          },
+        );
       },
     );
   }

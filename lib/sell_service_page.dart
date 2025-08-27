@@ -17,16 +17,13 @@ class _SellServicePageState extends State<SellServicePage> {
   String _category = '';
   String _serviceName = '';
   String _description = '';
-  double _priceMin = 0;
-  double _priceMax = 0;
   String _location = '';
-
   bool _loadingLocation = false;
 
-  final _priceMinController = TextEditingController();
-  final _priceMaxController = TextEditingController();
+  // Price Range
+  double _priceMinValue = 0;
+  double _priceMaxValue = 1000;
 
-  /// 🔹 Get location automatically using GPS
   Future<void> _detectLocation() async {
     setState(() => _loadingLocation = true);
     try {
@@ -77,9 +74,9 @@ class _SellServicePageState extends State<SellServicePage> {
     _formKey.currentState!.save();
 
     if (_location.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select or detect a location')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please select a location')));
       return;
     }
 
@@ -99,9 +96,9 @@ class _SellServicePageState extends State<SellServicePage> {
       'category': _category,
       'name': _serviceName,
       'description': _description,
-      'priceMin': _priceMin,
-      'priceMax': _priceMax,
-      'location': _location, // ✅ Auto/manual district saved
+      'priceMin': _priceMinValue,
+      'priceMax': _priceMaxValue,
+      'location': _location,
       'timestamp': FieldValue.serverTimestamp(),
     });
 
@@ -114,110 +111,117 @@ class _SellServicePageState extends State<SellServicePage> {
   }
 
   @override
-  void dispose() {
-    _priceMinController.dispose();
-    _priceMaxController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Sell a Service')),
       body: Padding(
         padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: ListView(
-            children: [
-              TextFormField(
-                decoration: const InputDecoration(labelText: 'Category'),
-                onSaved: (val) => _category = val!.trim(),
-                validator: (val) =>
-                    val == null || val.isEmpty ? 'Enter category' : null,
-              ),
-              TextFormField(
-                decoration: const InputDecoration(labelText: 'Service Name'),
-                onSaved: (val) => _serviceName = val!.trim(),
-                validator: (val) =>
-                    val == null || val.isEmpty ? 'Enter service name' : null,
-              ),
-              TextFormField(
-                decoration: const InputDecoration(labelText: 'Description'),
-                maxLines: 3,
-                onSaved: (val) => _description = val!.trim(),
-                validator: (val) =>
-                    val == null || val.isEmpty ? 'Enter description' : null,
-              ),
-              TextFormField(
-                controller: _priceMinController,
-                decoration: const InputDecoration(labelText: 'Price Min'),
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                validator: (val) {
-                  if (val == null || val.isEmpty) {
-                    return 'Enter minimum price';
-                  }
-                  if (double.tryParse(val) == null) return 'Enter valid number';
-                  return null;
-                },
-                onSaved: (val) => _priceMin = double.parse(val!),
-              ),
-              TextFormField(
-                controller: _priceMaxController,
-                decoration: const InputDecoration(labelText: 'Price Max'),
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                validator: (val) {
-                  if (val == null || val.isEmpty) {
-                    return 'Enter maximum price';
-                  }
-                  if (double.tryParse(val) == null) return 'Enter valid number';
-                  if (_priceMinController.text.isNotEmpty &&
-                      double.tryParse(_priceMinController.text)! >
-                          double.tryParse(val)!) {
-                    return 'Max price should be greater than min price';
-                  }
-                  return null;
-                },
-                onSaved: (val) => _priceMax = double.parse(val!),
-              ),
-
-              const SizedBox(height: 16),
-              Row(
+        child: ListView(
+          children: [
+            Form(
+              key: _formKey,
+              child: Column(
                 children: [
-                  Expanded(
-                    child: Text(
-                      _location.isEmpty
-                          ? 'No location selected'
-                          : 'Selected: $_location',
+                  TextFormField(
+                    decoration: const InputDecoration(
+                      labelText: 'Category',
+                      prefixIcon: Icon(Icons.category),
                     ),
+                    onSaved: (val) => _category = val!.trim(),
+                    validator: (val) =>
+                        val == null || val.isEmpty ? 'Enter category' : null,
                   ),
-                  IconButton(
-                    icon: _loadingLocation
-                        ? const CircularProgressIndicator()
-                        : const Icon(Icons.my_location, color: Colors.blue),
-                    onPressed: _loadingLocation ? null : _detectLocation,
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    decoration: const InputDecoration(
+                      labelText: 'Service Name',
+                      prefixIcon: Icon(Icons.build_circle),
+                    ),
+                    onSaved: (val) => _serviceName = val!.trim(),
+                    validator: (val) => val == null || val.isEmpty
+                        ? 'Enter service name'
+                        : null,
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    decoration: const InputDecoration(
+                      labelText: 'Description',
+                      prefixIcon: Icon(Icons.description),
+                    ),
+                    maxLines: 3,
+                    onSaved: (val) => _description = val!.trim(),
+                    validator: (val) =>
+                        val == null || val.isEmpty ? 'Enter description' : null,
+                  ),
+                  const SizedBox(height: 24),
+
+                  // 🔹 Price Range
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Price Range: ${_priceMinValue.toStringAsFixed(0)} - ${_priceMaxValue.toStringAsFixed(0)}',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      RangeSlider(
+                        min: 0,
+                        max: 10000,
+                        divisions: 100,
+                        values: RangeValues(_priceMinValue, _priceMaxValue),
+                        labels: RangeLabels(
+                          _priceMinValue.toStringAsFixed(0),
+                          _priceMaxValue.toStringAsFixed(0),
+                        ),
+                        onChanged: (RangeValues values) {
+                          setState(() {
+                            _priceMinValue = values.start.roundToDouble();
+                            _priceMaxValue = values.end.roundToDouble();
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // 🔹 Location row: GPS + Dropdown
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: _loadingLocation
+                            ? const CircularProgressIndicator()
+                            : const Icon(Icons.my_location, color: Colors.blue),
+                        onPressed: _loadingLocation ? null : _detectLocation,
+                      ),
+                      Expanded(
+                        child: LocationSelector(
+                          selectedLocation: _location,
+                          onLocationSelected: (val) {
+                            setState(() => _location = val);
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.save),
+                      label: const Text(
+                        'Save Service',
+                        style: TextStyle(fontSize: 18),
+                      ),
+                      onPressed: _saveService,
+                    ),
                   ),
                 ],
               ),
-
-              // 🔹 Manual selection fallback
-              LocationSelector(
-                onLocationSelected: (district) {
-                  setState(() => _location = district);
-                },
-              ),
-
-              const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: _saveService,
-                child: const Text('Save Service'),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

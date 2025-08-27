@@ -4,25 +4,14 @@ import 'package:firebase_auth/firebase_auth.dart';
 class LoginChoicePage extends StatelessWidget {
   const LoginChoicePage({super.key});
 
-  // Future<void> _continueAsGuest(BuildContext context) async {
-  //   try {
-  //     await FirebaseAuth.instance.signInAnonymously();
-  //     Navigator.pushReplacementNamed(context, '/home');
-  //   } catch (e) {
-  //     ScaffoldMessenger.of(context).showSnackBar(
-  //       SnackBar(content: Text('Failed to sign in as guest: $e')),
-  //     );
-  //   }
-  // }
   Future<void> _continueAsGuest(BuildContext context) async {
     try {
-      print("🔄 Attempting anonymous sign-in...");
       final userCredential = await FirebaseAuth.instance.signInAnonymously();
-      print("✅ Signed in as guest: ${userCredential.user?.uid}");
+      debugPrint("✅ Signed in as guest: ${userCredential.user?.uid}");
       Navigator.pushReplacementNamed(context, '/home');
     } catch (e, stack) {
-      print("❌ Guest sign-in error: $e");
-      print(stack);
+      debugPrint("❌ Guest sign-in error: $e");
+      debugPrint(stack.toString());
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Failed to sign in as guest: $e')));
@@ -31,39 +20,89 @@ class LoginChoicePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Welcome to NearMe Services')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pushNamed(context, '/login-email');
-              },
-              child: const Text('Login with Email'),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pushNamed(context, '/login-phone');
-              },
-              child: const Text('Login with Phone'),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () => _continueAsGuest(context),
-              child: const Text('Continue as Guest'),
-            ),
-            const SizedBox(height: 16),
-            TextButton(
-              onPressed: () {
-                Navigator.pushNamed(context, '/create-account');
-              },
-              child: const Text('Create Account'),
-            ),
-          ],
+      backgroundColor: Colors.grey[100],
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // App Logo / Icon
+              Icon(Icons.handshake, size: 80, color: theme.primaryColor),
+              const SizedBox(height: 16),
+
+              Text(
+                "Welcome to NearMe Services",
+                style: theme.textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 40),
+
+              // Login with Email Button
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.email_outlined),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: () {
+                    Navigator.pushNamed(context, '/login-email');
+                  },
+                  label: const Text(
+                    'Login with Email',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Continue as Guest Button
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.person_outline),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    side: BorderSide(color: theme.primaryColor, width: 1.5),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: () => _continueAsGuest(context),
+                  label: const Text(
+                    'Continue as Guest',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Create Account Button
+              TextButton(
+                onPressed: () {
+                  Navigator.pushNamed(context, '/create-account');
+                },
+                child: const Text(
+                  'Create Account',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -11,21 +11,19 @@ class CreateAccountPage extends StatefulWidget {
 
 class _CreateAccountPageState extends State<CreateAccountPage> {
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController(); // NEW
+  final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _loading = false;
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _createAccount() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final name = _nameController.text.trim(); // NEW
+    final name = _nameController.text.trim();
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
 
@@ -38,17 +36,16 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
       final user = userCredential.user;
 
       if (user != null) {
-        // Save user to Firestore with default role "user"
         await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-          'name': name, // SAVE NAME
+          'name': name,
           'email': email,
-          'role': 'user', // default role
+          'role': 'user',
           'createdAt': FieldValue.serverTimestamp(),
         });
       }
 
       _showMessage("Account created successfully!");
-      Navigator.pushReplacementNamed(context, '/home');
+      Navigator.pushReplacementNamed(context, '/');
     } on FirebaseAuthException catch (e) {
       String errorMsg = 'Registration failed';
       if (e.code == 'email-already-in-use') {
@@ -61,14 +58,14 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
       _showMessage(errorMsg);
     } catch (e) {
       _showMessage("Error: $e");
+    } finally {
+      setState(() => _loading = false);
     }
-
-    setState(() => _loading = false);
   }
 
   @override
   void dispose() {
-    _nameController.dispose(); // NEW
+    _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -77,87 +74,124 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Create Account')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                'Create a new account',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 24),
+      appBar: AppBar(
+        title: const Text("Create Account"),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            Navigator.pushReplacementNamed(context, '/login-choice');
+          },
+        ),
+      ),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Card(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            elevation: 6,
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Name
+                    TextFormField(
+                      controller: _nameController,
+                      decoration: InputDecoration(
+                        labelText: 'Name',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        prefixIcon: const Icon(Icons.person),
+                      ),
+                      validator: (val) =>
+                          val == null || val.isEmpty ? 'Enter your name' : null,
+                    ),
+                    const SizedBox(height: 16),
 
-              // NAME FIELD
-              TextFormField(
-                controller: _nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Full Name',
-                  border: OutlineInputBorder(),
-                ),
-                validator: (val) {
-                  if (val == null || val.isEmpty) return 'Enter your name';
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
+                    // Email
+                    TextFormField(
+                      controller: _emailController,
+                      decoration: InputDecoration(
+                        labelText: 'Email',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        prefixIcon: const Icon(Icons.email),
+                      ),
+                      keyboardType: TextInputType.emailAddress,
+                      validator: (val) {
+                        if (val == null || val.isEmpty) return 'Enter email';
+                        if (!RegExp(
+                          r'^[\w-]+@([\w-]+\.)+[\w]{2,4}$',
+                        ).hasMatch(val)) {
+                          return 'Enter valid email';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
 
-              // EMAIL FIELD
-              TextFormField(
-                controller: _emailController,
-                decoration: const InputDecoration(
-                  labelText: 'Email',
-                  border: OutlineInputBorder(),
-                ),
-                keyboardType: TextInputType.emailAddress,
-                validator: (val) {
-                  if (val == null || val.isEmpty) return 'Enter email';
-                  if (!RegExp(r'^[\w-]+@([\w-]+\.)+[\w]{2,4}$').hasMatch(val)) {
-                    return 'Enter valid email';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 16),
+                    // Password
+                    TextFormField(
+                      controller: _passwordController,
+                      decoration: InputDecoration(
+                        labelText: 'Password',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        prefixIcon: const Icon(Icons.lock),
+                      ),
+                      obscureText: true,
+                      validator: (val) {
+                        if (val == null || val.isEmpty) return 'Enter password';
+                        if (val.length < 6) {
+                          return 'Password must be at least 6 characters';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 24),
 
-              // PASSWORD FIELD
-              TextFormField(
-                controller: _passwordController,
-                decoration: const InputDecoration(
-                  labelText: 'Password',
-                  border: OutlineInputBorder(),
-                ),
-                obscureText: true,
-                validator: (val) {
-                  if (val == null || val.isEmpty) return 'Enter password';
-                  if (val.length < 6) {
-                    return 'Password must be at least 6 characters';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 24),
-
-              _loading
-                  ? const CircularProgressIndicator()
-                  : SizedBox(
+                    // Button
+                    SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: _createAccount,
-                        child: const Text('Create Account'),
+                        onPressed: _loading ? null : _createAccount,
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: _loading
+                            ? const CircularProgressIndicator(
+                                color: Colors.white,
+                              )
+                            : const Text(
+                                'Create Account',
+                                style: TextStyle(fontSize: 16),
+                              ),
                       ),
                     ),
-              const SizedBox(height: 16),
-              TextButton(
-                onPressed: () {
-                  Navigator.pushReplacementNamed(context, '/login-email');
-                },
-                child: const Text('Back to Login'),
+                    const SizedBox(height: 12),
+
+                    // Back to Login
+                    TextButton(
+                      onPressed: () => Navigator.pushReplacementNamed(
+                        context,
+                        '/login-email',
+                      ),
+                      child: const Text('Back to Login'),
+                    ),
+                  ],
+                ),
               ),
-            ],
+            ),
           ),
         ),
       ),

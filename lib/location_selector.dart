@@ -25,7 +25,8 @@ Future<String?> getDistrictFromCoordinates(Position pos) async {
       pos.longitude,
     );
     if (placemarks.isNotEmpty) {
-      return placemarks.first.subAdministrativeArea;
+      return placemarks.first.subAdministrativeArea ??
+          placemarks.first.administrativeArea;
     }
   } catch (e) {
     print('Error fetching district: $e');
@@ -35,11 +36,12 @@ Future<String?> getDistrictFromCoordinates(Position pos) async {
 
 class LocationSelector extends StatefulWidget {
   final Function(String) onLocationSelected;
-  final String? initialValue;
+  final String? selectedLocation; // ✅ Option 1
+
   const LocationSelector({
     super.key,
     required this.onLocationSelected,
-    this.initialValue,
+    this.selectedLocation,
   });
 
   @override
@@ -82,7 +84,7 @@ class _LocationSelectorState extends State<LocationSelector> {
   @override
   void initState() {
     super.initState();
-    _selectedDistrict = widget.initialValue;
+    _selectedDistrict = widget.selectedLocation;
   }
 
   Future<void> _useGPS() async {
@@ -100,11 +102,18 @@ class _LocationSelectorState extends State<LocationSelector> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Row(
       children: [
-        ElevatedButton.icon(
-          icon: _loadingGPS
+        // GPS button
+        ElevatedButton(
+          onPressed: _loadingGPS ? null : _useGPS,
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          child: _loadingGPS
               ? const SizedBox(
                   width: 16,
                   height: 16,
@@ -114,20 +123,31 @@ class _LocationSelectorState extends State<LocationSelector> {
                   ),
                 )
               : const Icon(Icons.my_location),
-          label: const Text('Use Current Location'),
-          onPressed: _loadingGPS ? null : _useGPS,
         ),
-        const SizedBox(height: 12),
-        DropdownButtonFormField<String>(
-          value: _selectedDistrict,
-          hint: const Text('Select your district manually'),
-          items: _districts
-              .map((d) => DropdownMenuItem(value: d, child: Text(d)))
-              .toList(),
-          onChanged: (val) {
-            setState(() => _selectedDistrict = val);
-            if (val != null) widget.onLocationSelected(val);
-          },
+        const SizedBox(width: 12),
+
+        // Dropdown for manual selection
+        Expanded(
+          child: DropdownButtonFormField<String>(
+            value: _selectedDistrict,
+            hint: const Text('Select your district'),
+            items: _districts
+                .map((d) => DropdownMenuItem(value: d, child: Text(d)))
+                .toList(),
+            onChanged: (val) {
+              setState(() => _selectedDistrict = val);
+              if (val != null) widget.onLocationSelected(val);
+            },
+            decoration: InputDecoration(
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 14,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
         ),
       ],
     );

@@ -5,7 +5,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'service_details_page.dart';
 import 'seller_dashboard_page.dart';
-import 'location_selector.dart';
+import 'sell_service_page.dart';
+import 'admin_dashboard.dart'; // Make sure you have this page
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -17,6 +18,8 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   bool _isSeller = false;
   String? _userDistrict;
+  String? _role;
+
   final List<String> _districts = [
     "All Sri Lanka",
     "Colombo",
@@ -49,22 +52,41 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _checkIfSeller();
+    _checkUserRole();
     _loadUserDistrict();
   }
 
-  Future<void> _checkIfSeller() async {
+  /// 🔹 Check if user is admin, seller, or normal
+  Future<void> _checkUserRole() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final query = await FirebaseFirestore.instance
-        .collection('services')
-        .where('ownerId', isEqualTo: user.uid)
-        .limit(1)
+    final userDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
         .get();
 
-    if (query.docs.isNotEmpty) {
-      setState(() => _isSeller = true);
+    if (userDoc.exists) {
+      final role = userDoc.data()?['role'] ?? 'user';
+      setState(() => _role = role);
+
+      if (role == 'admin') {
+        // Auto-redirect admin to Admin Dashboard
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const AdminDashboard()),
+          );
+        });
+        return;
+      }
+
+      if (role == 'seller') {
+        setState(() => _isSeller = true);
+      }
+    } else {
+      // If user doc doesn't exist, treat as normal user
+      setState(() => _role = 'user');
     }
   }
 
@@ -116,9 +138,7 @@ class _HomePageState extends State<HomePage> {
 
       if (placemarks.isNotEmpty) {
         final district = placemarks.first.administrativeArea ?? "Unknown";
-        if (_districts.contains(district)) {
-          await _updateUserDistrict(district);
-        }
+        if (_districts.contains(district)) await _updateUserDistrict(district);
       }
     } catch (e) {
       debugPrint("Error detecting location: $e");
@@ -161,9 +181,8 @@ class _HomePageState extends State<HomePage> {
           ),
           ElevatedButton(
             onPressed: () async {
-              if (selectedDistrict != null) {
+              if (selectedDistrict != null)
                 await _updateUserDistrict(selectedDistrict!);
-              }
               Navigator.pop(ctx);
             },
             child: const Text("Save"),
@@ -206,19 +225,25 @@ class _HomePageState extends State<HomePage> {
         .orderBy('timestamp', descending: true);
 
     if (_userDistrict != null && _userDistrict != "All Sri Lanka") {
-      // Filter using 'location' instead of 'district'
       return collection.where('location', isEqualTo: _userDistrict).snapshots();
     }
 
-    // Show all services if district is null or 'All Sri Lanka'
     return collection.snapshots();
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    // While loading role or redirecting admin, show a loader
+    if (_role == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
     return Scaffold(
+      backgroundColor: Colors.grey[100],
       appBar: AppBar(
-        title: const Text('NearMe Services - Home'),
+        title: const Text('NearMe Services'),
         actions: [
           if (_userDistrict != null)
             Padding(
@@ -241,104 +266,132 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () =>
-                        Navigator.pushNamed(context, '/sell-service'),
-                    child: const Text('Sell a Service'),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const SellServicePage()),
+        ),
+        backgroundColor: theme.primaryColor,
+        child: const Icon(Icons.add, size: 28),
+        tooltip: 'Sell a Service',
+      ),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: _getServicesStream(),
+        builder: (context, snap) {
+          if (snap.hasError) return Center(child: Text('Error: ${snap.error}'));
+          if (!snap.hasData)
+            return const Center(child: CircularProgressIndicator());
+
+          final services = snap.data!.docs;
+          if (services.isEmpty) {
+            return Center(
+              child: Text(
+                _userDistrict != null
+                    ? 'No services found in $_userDistrict.'
+                    : 'No services found.',
+                style: const TextStyle(fontSize: 16),
+              ),
+            );
+          }
+
+          return ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            itemCount: services.length,
+            itemBuilder: (context, i) {
+              final doc = services[i];
+              final data = doc.data()! as Map<String, dynamic>;
+              final ownerName = data['ownerName'] ?? '';
+              final ownerEmail = data['ownerEmail'] ?? '';
+
+              return Container(
+                margin: const EdgeInsets.symmetric(vertical: 6),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.grey.withOpacity(0.2),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ServiceDetailsPage(serviceId: doc.id),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        data['name'] ?? '',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 6,
+                        children: [
+                          Chip(
+                            label: Text(data['category'] ?? ''),
+                            backgroundColor: Colors.blue.shade50,
+                          ),
+                          Chip(
+                            label: Text(data['location'] ?? ''),
+                            backgroundColor: Colors.green.shade50,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Price: ${data['priceMin'] ?? ''} - ${data['priceMax'] ?? ''}',
+                        style: const TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                      Text(
+                        'Owner: ${ownerName.isNotEmpty ? ownerName : ownerEmail}',
+                        style: const TextStyle(color: Colors.grey),
+                      ),
+                      const SizedBox(height: 6),
+                      AverageRatingLine(serviceId: doc.id),
+                    ],
                   ),
                 ),
-                if (_isSeller) ...[
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const SellerDashboardPage(),
-                        ),
-                      ),
-                      child: const Text('Seller Dashboard'),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: _getServicesStream(),
-              builder: (context, snap) {
-                if (snap.hasError)
-                  return Center(child: Text('Error: ${snap.error}'));
-                if (!snap.hasData)
-                  return const Center(child: CircularProgressIndicator());
-
-                final services = snap.data!.docs;
-                if (services.isEmpty) {
-                  return Center(
-                    child: Text(
-                      _userDistrict != null
-                          ? 'No services found in $_userDistrict.'
-                          : 'No services found.',
-                    ),
-                  );
-                }
-
-                return ListView.builder(
-                  itemCount: services.length,
-                  itemBuilder: (context, i) {
-                    final doc = services[i];
-                    final data = doc.data()! as Map<String, dynamic>;
-                    final ownerName = data['ownerName'] ?? '';
-                    final ownerEmail = data['ownerEmail'] ?? '';
-
-                    return Card(
-                      margin: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      child: ListTile(
-                        title: Text(data['name'] ?? ''),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '${data['category'] ?? ''} | ${data['location'] ?? ''}',
-                            ),
-                            Text(
-                              'Price: ${data['priceMin'] ?? ''} - ${data['priceMax'] ?? ''}',
-                            ),
-                            Text(
-                              'Owner: ${ownerName.isNotEmpty ? ownerName : ownerEmail}',
-                            ),
-                            const SizedBox(height: 4),
-                            AverageRatingLine(serviceId: doc.id),
-                          ],
-                        ),
-                        isThreeLine: true,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                ServiceDetailsPage(serviceId: doc.id),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ],
+              );
+            },
+          );
+        },
       ),
+      bottomNavigationBar: _isSeller
+          ? Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: ElevatedButton(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const SellerDashboardPage(),
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  backgroundColor: theme.primaryColor,
+                ),
+                child: const Text(
+                  'Seller Dashboard',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+              ),
+            )
+          : null,
     );
   }
 }
