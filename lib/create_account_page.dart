@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class CreateAccountPage extends StatefulWidget {
   const CreateAccountPage({super.key});
@@ -10,6 +11,7 @@ class CreateAccountPage extends StatefulWidget {
 
 class _CreateAccountPageState extends State<CreateAccountPage> {
   final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController(); // NEW
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _loading = false;
@@ -23,6 +25,7 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
   Future<void> _createAccount() async {
     if (!_formKey.currentState!.validate()) return;
 
+    final name = _nameController.text.trim(); // NEW
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
 
@@ -32,9 +35,19 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
       UserCredential userCredential = await FirebaseAuth.instance
           .createUserWithEmailAndPassword(email: email, password: password);
 
-      _showMessage("Account created successfully!");
+      final user = userCredential.user;
 
-      // Navigate to home page after successful registration
+      if (user != null) {
+        // Save user to Firestore with default role "user"
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+          'name': name, // SAVE NAME
+          'email': email,
+          'role': 'user', // default role
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      _showMessage("Account created successfully!");
       Navigator.pushReplacementNamed(context, '/home');
     } on FirebaseAuthException catch (e) {
       String errorMsg = 'Registration failed';
@@ -55,6 +68,7 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
 
   @override
   void dispose() {
+    _nameController.dispose(); // NEW
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -76,6 +90,22 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 24),
+
+              // NAME FIELD
+              TextFormField(
+                controller: _nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Full Name',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (val) {
+                  if (val == null || val.isEmpty) return 'Enter your name';
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+
+              // EMAIL FIELD
               TextFormField(
                 controller: _emailController,
                 decoration: const InputDecoration(
@@ -92,6 +122,8 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
                 },
               ),
               const SizedBox(height: 16),
+
+              // PASSWORD FIELD
               TextFormField(
                 controller: _passwordController,
                 decoration: const InputDecoration(
@@ -101,12 +133,14 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
                 obscureText: true,
                 validator: (val) {
                   if (val == null || val.isEmpty) return 'Enter password';
-                  if (val.length < 6)
+                  if (val.length < 6) {
                     return 'Password must be at least 6 characters';
+                  }
                   return null;
                 },
               ),
               const SizedBox(height: 24),
+
               _loading
                   ? const CircularProgressIndicator()
                   : SizedBox(
