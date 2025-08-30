@@ -17,6 +17,9 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
   String? _ownerId;
   DateTime? _selectedDate; // selected booking date
 
+  double? _proposedPrice; // seller proposed price
+  bool? _buyerAgreed; // buyer response: null, true, false
+
   @override
   void initState() {
     super.initState();
@@ -40,15 +43,27 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
           .collection('requests')
           .doc(user.uid)
           .get();
+
       setState(() {
-        _requestData = requestDoc.exists ? requestDoc.data()! : null;
-        if (_requestData != null && _requestData!['bookingDate'] != null) {
-          final bd = _requestData!['bookingDate'];
-          if (bd is Timestamp) {
-            _selectedDate = bd.toDate();
-          } else if (bd is DateTime) {
-            _selectedDate = bd;
+        if (requestDoc.exists) {
+          _requestData = requestDoc.data()!;
+          final data = _requestData!;
+
+          if (data['bookingDate'] != null) {
+            final bd = data['bookingDate'];
+            if (bd is Timestamp) _selectedDate = bd.toDate();
+            else if (bd is DateTime) _selectedDate = bd;
           }
+
+          _proposedPrice = data['proposedPrice'] != null
+              ? (data['proposedPrice'] as num).toDouble()
+              : null;
+
+          _buyerAgreed = data['buyerAgreed']; // null, true, false
+        } else {
+          _requestData = null;
+          _proposedPrice = null;
+          _buyerAgreed = null;
         }
       });
     }
@@ -63,9 +78,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
       lastDate: now.add(const Duration(days: 365)),
     );
 
-    if (picked != null) {
-      setState(() => _selectedDate = picked);
-    }
+    if (picked != null) setState(() => _selectedDate = picked);
   }
 
   Future<void> _requestBooking() async {
@@ -79,22 +92,22 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
       return;
     }
 
-    // Save booking request with date as Timestamp
     await FirebaseFirestore.instance
         .collection('services')
         .doc(widget.serviceId)
         .collection('requests')
         .doc(user.uid)
         .set({
-          'userId': user.uid,
-          'userEmail': user.email,
-          'userName': user.displayName ?? user.email,
-          'status': 'pending',
-          'timestamp': FieldValue.serverTimestamp(),
-          'bookingDate': Timestamp.fromDate(_selectedDate!), // 🔹 important
-        });
+      'userId': user.uid,
+      'userEmail': user.email,
+      'userName': user.displayName ?? user.email,
+      'status': 'pending',
+      'timestamp': FieldValue.serverTimestamp(),
+      'bookingDate': Timestamp.fromDate(_selectedDate!),
+      'buyerAgreed': null,
+      'proposedPrice': null,
+    });
 
-    // Add notification for seller
     await FirebaseFirestore.instance.collection('notifications').add({
       'ownerId': _ownerId,
       'serviceId': widget.serviceId,
@@ -111,11 +124,13 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
         'userEmail': user.email,
         'status': 'pending',
         'bookingDate': Timestamp.fromDate(_selectedDate!),
+        'buyerAgreed': null,
+        'proposedPrice': null,
       };
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Booking requested! You can now chat.')),
+      const SnackBar(content: Text('Booking requested!')),
     );
   }
 
@@ -140,22 +155,42 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
         .collection('ratings')
         .doc(user.uid)
         .set({
-          'rating': _rating,
-          'timestamp': FieldValue.serverTimestamp(),
-          'userId': user.uid,
-          'userEmail': user.email,
-        });
+      'rating': _rating,
+      'timestamp': FieldValue.serverTimestamp(),
+      'userId': user.uid,
+      'userEmail': user.email,
+    });
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Rating submitted!')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Rating submitted!')),
+    );
+  }
+
+  Future<void> _respondToPrice(bool agreed) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    await FirebaseFirestore.instance
+        .collection('services')
+        .doc(widget.serviceId)
+        .collection('requests')
+        .doc(user.uid)
+        .update({'buyerAgreed': agreed});
+
+    setState(() {
+      _buyerAgreed = agreed;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+          content: Text(agreed ? 'You agreed to the price!' : 'You rejected')),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final serviceRef = FirebaseFirestore.instance
-        .collection('services')
-        .doc(widget.serviceId);
+    final serviceRef =
+        FirebaseFirestore.instance.collection('services').doc(widget.serviceId);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Service Details')),
@@ -193,33 +228,30 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
               const SizedBox(height: 8),
               _AverageRatingBlock(serviceId: widget.serviceId),
               const SizedBox(height: 16),
-              const Text(
-                'Description',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
+              const Text('Description', style: TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 6),
               Text(data['description'] ?? ''),
               const SizedBox(height: 20),
 
               // Date picker
-              ElevatedButton(
-                onPressed: _pickDate,
-                child: Text(
-                  _selectedDate == null
-                      ? "Select Booking Date"
-                      : "Booking Date: ${_selectedDate!.toLocal()}".split(
-                          ' ',
-                        )[0],
+              if (_requestData == null)
+                ElevatedButton(
+                  onPressed: _pickDate,
+                  child: Text(
+                    _selectedDate == null
+                        ? "Select Booking Date"
+                        : "Booking Date: ${_selectedDate!.toLocal()}".split(' ')[0],
+                  ),
                 ),
-              ),
               const SizedBox(height: 12),
 
-              // Booking / Chat button
+              // Booking / Chat / Price negotiation
               if (_requestData == null)
                 ElevatedButton(
                   onPressed: _requestBooking,
                   child: const Text('Request Booking'),
                 ),
+
               if (_requestData != null)
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -233,18 +265,42 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
                             : 'Chat with Seller',
                       ),
                     ),
-                    if (_requestData!['status'] == 'pending')
-                      const SizedBox(height: 4),
-                    if (_requestData!['status'] == 'rejected')
-                      const Text(
-                        'Booking Rejected',
-                        style: TextStyle(color: Colors.red),
+                    const SizedBox(height: 8),
+
+                    // Show proposed price and buyer action
+                    if (_proposedPrice != null && _buyerAgreed == null)
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Seller proposed: \$${_proposedPrice!.toStringAsFixed(2)}',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              ElevatedButton(
+                                onPressed: () => _respondToPrice(true),
+                                child: const Text('Agree'),
+                              ),
+                              const SizedBox(width: 12),
+                              ElevatedButton(
+                                onPressed: () => _respondToPrice(false),
+                                child: const Text('Reject'),
+                                style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.red),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
-                    if (_requestData!['status'] == 'approved')
-                      const Text(
-                        'Booking Approved',
-                        style: TextStyle(color: Colors.green),
+
+                    if (_buyerAgreed != null)
+                      Text(
+                        'Buyer Response: ${_buyerAgreed! ? "Agreed" : "Rejected"}',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
+
                     if (_requestData!['bookingDate'] != null)
                       Text(
                         'Booking Date: ${(_requestData!['bookingDate'] as Timestamp).toDate().toLocal()}'
@@ -255,10 +311,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
                 ),
 
               const Divider(height: 32),
-              const Text(
-                'Rate this service',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
+              const Text('Rate this service', style: TextStyle(fontWeight: FontWeight.bold)),
               Slider(
                 value: _rating,
                 min: 0,
@@ -272,10 +325,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
                 child: const Text('Submit Rating'),
               ),
               const SizedBox(height: 20),
-              const Text(
-                'All Ratings',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
+              const Text('All Ratings', style: TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
               _RatingsList(serviceId: widget.serviceId),
             ],

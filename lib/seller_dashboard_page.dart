@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'request_details_page.dart';
-import 'package:intl/intl.dart'; // for formatting date
 
 class SellerDashboardPage extends StatefulWidget {
   final String? focusServiceId;
@@ -63,10 +62,6 @@ class _SellerDashboardPageState extends State<SellerDashboardPage> {
   void dispose() {
     _scrollController.dispose();
     super.dispose();
-  }
-
-  String formatDate(Timestamp timestamp) {
-    return DateFormat('dd MMM yyyy').format(timestamp.toDate());
   }
 
   @override
@@ -223,62 +218,14 @@ class _SellerDashboardPageState extends State<SellerDashboardPage> {
                         final userEmail =
                             reqData['userEmail'] ?? reqData['userId'];
 
-                        final bookingDate = reqData['bookingDate'] != null
-                            ? reqData['bookingDate'] as Timestamp
-                            : null;
-                        final isFocused = reqDoc.id == widget.focusBookingId;
-
+                        // Only show booking request info, no date or buttons
                         return Card(
-                          color: isFocused ? Colors.yellow[100] : Colors.white,
                           margin: const EdgeInsets.symmetric(
                             horizontal: 8,
                             vertical: 4,
                           ),
                           child: ListTile(
                             title: Text('Booking request from $userEmail'),
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('Status: ${reqData['status']}'),
-                                if (bookingDate != null)
-                                  Text(
-                                    'Booking Date: ${formatDate(bookingDate)}',
-                                  ),
-                              ],
-                            ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon: const Icon(
-                                    Icons.check,
-                                    color: Colors.green,
-                                  ),
-                                  onPressed: () {
-                                    FirebaseFirestore.instance
-                                        .collection('services')
-                                        .doc(serviceId)
-                                        .collection('requests')
-                                        .doc(reqDoc.id)
-                                        .update({'status': 'approved'});
-                                  },
-                                ),
-                                IconButton(
-                                  icon: const Icon(
-                                    Icons.close,
-                                    color: Colors.red,
-                                  ),
-                                  onPressed: () {
-                                    FirebaseFirestore.instance
-                                        .collection('services')
-                                        .doc(serviceId)
-                                        .collection('requests')
-                                        .doc(reqDoc.id)
-                                        .update({'status': 'rejected'});
-                                  },
-                                ),
-                              ],
-                            ),
                             onTap: () {
                               Navigator.push(
                                 context,
