@@ -15,6 +15,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
   double _rating = 0;
   Map<String, dynamic>? _requestData;
   String? _ownerId;
+  DateTime? _selectedDate; // selected booking date
 
   @override
   void initState() {
@@ -41,7 +42,29 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
           .get();
       setState(() {
         _requestData = requestDoc.exists ? requestDoc.data()! : null;
+        if (_requestData != null && _requestData!['bookingDate'] != null) {
+          final bd = _requestData!['bookingDate'];
+          if (bd is Timestamp) {
+            _selectedDate = bd.toDate();
+          } else if (bd is DateTime) {
+            _selectedDate = bd;
+          }
+        }
       });
+    }
+  }
+
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate ?? now,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
+    );
+
+    if (picked != null) {
+      setState(() => _selectedDate = picked);
     }
   }
 
@@ -49,7 +72,14 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || _ownerId == null) return;
 
-    // 1️⃣ Save booking request
+    if (_selectedDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please select a booking date")),
+      );
+      return;
+    }
+
+    // Save booking request with date as Timestamp
     await FirebaseFirestore.instance
         .collection('services')
         .doc(widget.serviceId)
@@ -61,11 +91,12 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
           'userName': user.displayName ?? user.email,
           'status': 'pending',
           'timestamp': FieldValue.serverTimestamp(),
+          'bookingDate': Timestamp.fromDate(_selectedDate!), // 🔹 important
         });
 
-    // 2️⃣ Add notification for seller
+    // Add notification for seller
     await FirebaseFirestore.instance.collection('notifications').add({
-      'ownerId': _ownerId, // Seller ID
+      'ownerId': _ownerId,
       'serviceId': widget.serviceId,
       'userId': user.uid,
       'userName': user.displayName ?? user.email,
@@ -79,6 +110,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
         'userId': user.uid,
         'userEmail': user.email,
         'status': 'pending',
+        'bookingDate': Timestamp.fromDate(_selectedDate!),
       };
     });
 
@@ -169,6 +201,19 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
               Text(data['description'] ?? ''),
               const SizedBox(height: 20),
 
+              // Date picker
+              ElevatedButton(
+                onPressed: _pickDate,
+                child: Text(
+                  _selectedDate == null
+                      ? "Select Booking Date"
+                      : "Booking Date: ${_selectedDate!.toLocal()}".split(
+                          ' ',
+                        )[0],
+                ),
+              ),
+              const SizedBox(height: 12),
+
               // Booking / Chat button
               if (_requestData == null)
                 ElevatedButton(
@@ -199,6 +244,12 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
                       const Text(
                         'Booking Approved',
                         style: TextStyle(color: Colors.green),
+                      ),
+                    if (_requestData!['bookingDate'] != null)
+                      Text(
+                        'Booking Date: ${(_requestData!['bookingDate'] as Timestamp).toDate().toLocal()}'
+                            .split(' ')[0],
+                        style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                   ],
                 ),

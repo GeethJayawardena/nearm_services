@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'request_details_page.dart';
+import 'package:intl/intl.dart'; // for formatting date
 
 class SellerDashboardPage extends StatefulWidget {
   final String? focusServiceId;
@@ -64,6 +65,10 @@ class _SellerDashboardPageState extends State<SellerDashboardPage> {
     super.dispose();
   }
 
+  String formatDate(Timestamp timestamp) {
+    return DateFormat('dd MMM yyyy').format(timestamp.toDate());
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
@@ -94,7 +99,6 @@ class _SellerDashboardPageState extends State<SellerDashboardPage> {
                   IconButton(
                     icon: const Icon(Icons.notifications),
                     onPressed: () {
-                      // instead of auto-clearing, show bottom sheet with "View All"
                       showModalBottomSheet(
                         context: context,
                         builder: (context) {
@@ -118,9 +122,7 @@ class _SellerDashboardPageState extends State<SellerDashboardPage> {
                                 const SizedBox(height: 20),
                                 ElevatedButton(
                                   onPressed: () async {
-                                    Navigator.pop(
-                                      context,
-                                    ); // close bottom sheet
+                                    Navigator.pop(context);
                                     await markNotificationsAsRead();
                                     Navigator.push(
                                       context,
@@ -221,6 +223,9 @@ class _SellerDashboardPageState extends State<SellerDashboardPage> {
                         final userEmail =
                             reqData['userEmail'] ?? reqData['userId'];
 
+                        final bookingDate = reqData['bookingDate'] != null
+                            ? reqData['bookingDate'] as Timestamp
+                            : null;
                         final isFocused = reqDoc.id == widget.focusBookingId;
 
                         return Card(
@@ -231,7 +236,16 @@ class _SellerDashboardPageState extends State<SellerDashboardPage> {
                           ),
                           child: ListTile(
                             title: Text('Booking request from $userEmail'),
-                            subtitle: Text('Status: ${reqData['status']}'),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('Status: ${reqData['status']}'),
+                                if (bookingDate != null)
+                                  Text(
+                                    'Booking Date: ${formatDate(bookingDate)}',
+                                  ),
+                              ],
+                            ),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
