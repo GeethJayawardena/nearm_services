@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
 
 class ChatPage extends StatefulWidget {
-  final String serviceId; // ID of the service
+  final String serviceId; // ID of the service or booking
   final String otherUserId; // The user you are chatting with
+
   const ChatPage({
     super.key,
     required this.serviceId,
@@ -16,15 +18,15 @@ class ChatPage extends StatefulWidget {
 }
 
 class _ChatPageState extends State<ChatPage> {
-  final _controller = TextEditingController();
-  final _scrollController = ScrollController();
+  final TextEditingController _controller = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   final _auth = FirebaseAuth.instance;
 
   String get chatId {
-    // Create a unique chat ID based on the two users (seller & customer)
+    // Unique chat ID per service between two users
     final currentUserId = _auth.currentUser!.uid;
     final ids = [currentUserId, widget.otherUserId]..sort();
-    return ids.join('_');
+    return '${widget.serviceId}_${ids.join('_')}';
   }
 
   Future<void> _sendMessage() async {
@@ -44,11 +46,23 @@ class _ChatPageState extends State<ChatPage> {
     });
 
     _controller.clear();
-    _scrollController.animateTo(
-      _scrollController.position.maxScrollExtent + 100,
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeOut,
-    );
+
+    // Scroll to bottom after sending
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  String _formatTimestamp(Timestamp? timestamp) {
+    if (timestamp == null) return '';
+    final dt = timestamp.toDate();
+    return DateFormat('hh:mm a').format(dt);
   }
 
   @override
@@ -72,37 +86,56 @@ class _ChatPageState extends State<ChatPage> {
                 }
                 final messages = snapshot.data!.docs;
 
+                if (messages.isEmpty) {
+                  return const Center(
+                    child: Text('No messages yet. Start the conversation!'),
+                  );
+                }
+
                 return ListView.builder(
                   controller: _scrollController,
+                  padding: const EdgeInsets.symmetric(vertical: 8),
                   itemCount: messages.length,
                   itemBuilder: (context, index) {
                     final msgData =
                         messages[index].data()! as Map<String, dynamic>;
                     final isMe = msgData['senderId'] == _auth.currentUser!.uid;
 
-                    return Align(
-                      alignment: isMe
-                          ? Alignment.centerRight
-                          : Alignment.centerLeft,
-                      child: Container(
-                        margin: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: isMe ? Colors.blue : Colors.grey[300],
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          msgData['text'] ?? '',
-                          style: TextStyle(
-                            color: isMe ? Colors.white : Colors.black,
+                    return Container(
+                      margin: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 4,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: isMe
+                            ? CrossAxisAlignment.end
+                            : CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isMe ? Colors.blue : Colors.grey[300],
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              msgData['text'] ?? '',
+                              style: TextStyle(
+                                color: isMe ? Colors.white : Colors.black,
+                              ),
+                            ),
                           ),
-                        ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _formatTimestamp(msgData['timestamp']),
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
                       ),
                     );
                   },
@@ -121,6 +154,10 @@ class _ChatPageState extends State<ChatPage> {
                     decoration: const InputDecoration(
                       hintText: 'Type a message...',
                       border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
                     ),
                   ),
                 ),
@@ -128,6 +165,7 @@ class _ChatPageState extends State<ChatPage> {
                 IconButton(
                   icon: const Icon(Icons.send),
                   onPressed: _sendMessage,
+                  color: Theme.of(context).primaryColor,
                 ),
               ],
             ),

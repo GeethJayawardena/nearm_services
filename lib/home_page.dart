@@ -262,21 +262,24 @@ class _HomePageState extends State<HomePage> {
                   itemCount: notifications.length,
                   itemBuilder: (context, index) {
                     final doc = notifications[index];
-                    final data = doc.data() as Map<String, dynamic>? ?? {};
+                    final data = doc.data()! as Map<String, dynamic>;
                     final userName = data['userName'] ?? 'Someone';
                     final type = data['type'] ?? 'Notification';
-                    final timestamp = data['timestamp'] as Timestamp?;
 
                     return ListTile(
                       title: Text('$userName - $type'),
                       subtitle: Text(
-                        timestamp != null ? timestamp.toDate().toString() : '',
+                        data['timestamp'] != null
+                            ? (data['timestamp'] as Timestamp)
+                                  .toDate()
+                                  .toString()
+                            : '',
                       ),
                       onTap: () {
-                        Navigator.pop(ctx); // close the dialog first
+                        Navigator.pop(ctx); // close the dialog
 
-                        // Booking request: open Seller Dashboard with the serviceId
-                        if (type == 'booking_request' &&
+                        // If it's a booking request, go to SellerDashboard
+                        if (data['type'] == 'booking_request' &&
                             data['serviceId'] != null) {
                           Navigator.push(
                             context,
@@ -287,7 +290,7 @@ class _HomePageState extends State<HomePage> {
                             ),
                           );
                         }
-                        // Regular service notification: open Service Details
+                        // Otherwise, go to ServiceDetailsPage
                         else if (data['serviceId'] != null) {
                           Navigator.push(
                             context,

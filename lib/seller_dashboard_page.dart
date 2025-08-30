@@ -3,7 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'request_details_page.dart';
 
-class SellerDashboardPage extends StatelessWidget {
+class SellerDashboardPage extends StatefulWidget {
   final String? focusServiceId;
   final String? focusBookingId;
 
@@ -12,6 +12,14 @@ class SellerDashboardPage extends StatelessWidget {
     this.focusServiceId,
     this.focusBookingId,
   });
+
+  @override
+  State<SellerDashboardPage> createState() => _SellerDashboardPageState();
+}
+
+class _SellerDashboardPageState extends State<SellerDashboardPage> {
+  final ScrollController _scrollController = ScrollController();
+  bool _scrollDone = false;
 
   /// Mark all notifications as read (optional)
   Future<void> markNotificationsAsRead() async {
@@ -25,6 +33,43 @@ class SellerDashboardPage extends StatelessWidget {
     for (var doc in unread.docs) {
       await doc.reference.update({'status': 'read'});
     }
+  }
+
+  void _scrollToFocusedBooking(List<QueryDocumentSnapshot> serviceDocs) {
+    if (_scrollDone || widget.focusServiceId == null || widget.focusBookingId == null) return;
+
+    double offset = 0;
+    for (var serviceDoc in serviceDocs) {
+      final serviceId = serviceDoc.id;
+
+      // Approximate height per service header + bookings
+      final serviceData = serviceDoc.data()! as Map<String, dynamic>;
+      final requests = serviceDoc.reference
+          .collection('requests')
+          .where('status', isEqualTo: 'pending');
+
+      // We'll scroll after first frame, just highlight is enough
+      if (serviceId == widget.focusServiceId) {
+        // Scroll to top for now (we can't get exact index without fully loaded requests)
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _scrollController.animateTo(
+            offset,
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeInOut,
+          );
+        });
+        _scrollDone = true;
+        break;
+      }
+
+      offset += 120.0; // approx height per service
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   @override
@@ -103,7 +148,11 @@ class SellerDashboardPage extends StatelessWidget {
             return const Center(child: Text('You have no services listed.'));
           }
 
+          // Scroll to focused booking
+          _scrollToFocusedBooking(services);
+
           return ListView(
+            controller: _scrollController,
             children: services.map((serviceDoc) {
               final serviceId = serviceDoc.id;
               final serviceData = serviceDoc.data()! as Map<String, dynamic>;
@@ -131,7 +180,7 @@ class SellerDashboardPage extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
-                            color: serviceId == focusServiceId
+                            color: serviceId == widget.focusServiceId
                                 ? Colors.blue
                                 : Colors.black,
                           ),
@@ -142,7 +191,8 @@ class SellerDashboardPage extends StatelessWidget {
                         final userEmail =
                             reqData['userEmail'] ?? reqData['userId'];
 
-                        final isFocused = reqDoc.id == focusBookingId;
+                        final isFocused =
+                            reqDoc.id == widget.focusBookingId;
 
                         return Card(
                           color: isFocused ? Colors.yellow[100] : Colors.white,
