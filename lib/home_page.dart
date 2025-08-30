@@ -344,13 +344,19 @@ class _HomePageState extends State<HomePage> {
             builder: (context, snap) {
               int unreadCount = 0;
               if (snap.hasData) unreadCount = snap.data!.docs.length;
+
               return Stack(
                 children: [
                   IconButton(
                     icon: const Icon(Icons.notifications),
                     onPressed: () {
-                      if (snap.hasData)
-                        _openNotificationsDialog(snap.data!.docs);
+                      // ✅ Navigate to Seller Dashboard instead of popup
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => SellerDashboardPage(),
+                        ),
+                      );
                     },
                   ),
                   if (unreadCount > 0)
@@ -376,6 +382,7 @@ class _HomePageState extends State<HomePage> {
               );
             },
           ),
+
           IconButton(
             icon: const Icon(Icons.location_on),
             onPressed: _chooseLocationDialog,

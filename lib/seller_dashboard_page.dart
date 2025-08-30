@@ -21,7 +21,6 @@ class _SellerDashboardPageState extends State<SellerDashboardPage> {
   final ScrollController _scrollController = ScrollController();
   bool _scrollDone = false;
 
-  /// Mark all notifications as read (optional)
   Future<void> markNotificationsAsRead() async {
     final userId = FirebaseAuth.instance.currentUser!.uid;
     final unread = await FirebaseFirestore.instance
@@ -36,21 +35,15 @@ class _SellerDashboardPageState extends State<SellerDashboardPage> {
   }
 
   void _scrollToFocusedBooking(List<QueryDocumentSnapshot> serviceDocs) {
-    if (_scrollDone || widget.focusServiceId == null || widget.focusBookingId == null) return;
+    if (_scrollDone ||
+        widget.focusServiceId == null ||
+        widget.focusBookingId == null)
+      return;
 
     double offset = 0;
     for (var serviceDoc in serviceDocs) {
       final serviceId = serviceDoc.id;
-
-      // Approximate height per service header + bookings
-      final serviceData = serviceDoc.data()! as Map<String, dynamic>;
-      final requests = serviceDoc.reference
-          .collection('requests')
-          .where('status', isEqualTo: 'pending');
-
-      // We'll scroll after first frame, just highlight is enough
       if (serviceId == widget.focusServiceId) {
-        // Scroll to top for now (we can't get exact index without fully loaded requests)
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _scrollController.animateTo(
             offset,
@@ -61,8 +54,7 @@ class _SellerDashboardPageState extends State<SellerDashboardPage> {
         _scrollDone = true;
         break;
       }
-
-      offset += 120.0; // approx height per service
+      offset += 120.0;
     }
   }
 
@@ -101,10 +93,49 @@ class _SellerDashboardPageState extends State<SellerDashboardPage> {
                 children: [
                   IconButton(
                     icon: const Icon(Icons.notifications),
-                    onPressed: () async {
-                      await markNotificationsAsRead();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Notifications cleared!')),
+                    onPressed: () {
+                      // instead of auto-clearing, show bottom sheet with "View All"
+                      showModalBottomSheet(
+                        context: context,
+                        builder: (context) {
+                          return Container(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Text(
+                                  "Notifications",
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                if (count == 0)
+                                  const Text("No new notifications"),
+                                if (count > 0)
+                                  Text("$count unread notifications"),
+                                const SizedBox(height: 20),
+                                ElevatedButton(
+                                  onPressed: () async {
+                                    Navigator.pop(
+                                      context,
+                                    ); // close bottom sheet
+                                    await markNotificationsAsRead();
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            const AllNotificationsPage(),
+                                      ),
+                                    );
+                                  },
+                                  child: const Text("View All"),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
                       );
                     },
                   ),
@@ -148,7 +179,6 @@ class _SellerDashboardPageState extends State<SellerDashboardPage> {
             return const Center(child: Text('You have no services listed.'));
           }
 
-          // Scroll to focused booking
           _scrollToFocusedBooking(services);
 
           return ListView(
@@ -191,8 +221,7 @@ class _SellerDashboardPageState extends State<SellerDashboardPage> {
                         final userEmail =
                             reqData['userEmail'] ?? reqData['userId'];
 
-                        final isFocused =
-                            reqDoc.id == widget.focusBookingId;
+                        final isFocused = reqDoc.id == widget.focusBookingId;
 
                         return Card(
                           color: isFocused ? Colors.yellow[100] : Colors.white,
@@ -256,6 +285,50 @@ class _SellerDashboardPageState extends State<SellerDashboardPage> {
                 },
               );
             }).toList(),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class AllNotificationsPage extends StatelessWidget {
+  const AllNotificationsPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final sellerId = FirebaseAuth.instance.currentUser!.uid;
+
+    return Scaffold(
+      appBar: AppBar(title: const Text("All Notifications")),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('notifications')
+            .where('ownerId', isEqualTo: sellerId)
+            .orderBy('timestamp', descending: true)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final notifications = snapshot.data!.docs;
+
+          if (notifications.isEmpty) {
+            return const Center(child: Text("No notifications yet."));
+          }
+
+          return ListView.builder(
+            itemCount: notifications.length,
+            itemBuilder: (context, index) {
+              final data = notifications[index].data() as Map<String, dynamic>;
+              return ListTile(
+                leading: const Icon(Icons.notifications),
+                title: Text(data['type'] ?? 'Notification'),
+                subtitle: Text(data['userName'] ?? 'Unknown User'),
+                trailing: Text(data['status'] ?? ''),
+              );
+            },
           );
         },
       ),
