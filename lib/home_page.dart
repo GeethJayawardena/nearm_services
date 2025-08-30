@@ -6,7 +6,7 @@ import 'package:geocoding/geocoding.dart';
 import 'service_details_page.dart';
 import 'seller_dashboard_page.dart';
 import 'sell_service_page.dart';
-import 'admin_dashboard.dart'; // Make sure you have this page
+import 'admin_dashboard.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -56,7 +56,6 @@ class _HomePageState extends State<HomePage> {
     _loadUserDistrict();
   }
 
-  /// 🔹 Check if user is admin, seller, or normal
   Future<void> _checkUserRole() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -71,7 +70,6 @@ class _HomePageState extends State<HomePage> {
       setState(() => _role = role);
 
       if (role == 'admin') {
-        // Auto-redirect admin to Admin Dashboard
         WidgetsBinding.instance.addPostFrameCallback((_) {
           Navigator.pushReplacement(
             context,
@@ -85,7 +83,6 @@ class _HomePageState extends State<HomePage> {
         setState(() => _isSeller = true);
       }
     } else {
-      // If user doc doesn't exist, treat as normal user
       setState(() => _role = 'user');
     }
   }
@@ -219,26 +216,109 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Stream<QuerySnapshot> _getServicesStream() {
+  Stream<List<QueryDocumentSnapshot>> _getServicesStream() {
+    final currentUser = FirebaseAuth.instance.currentUser;
     final collection = FirebaseFirestore.instance
         .collection('services')
-        .orderBy('timestamp', descending: true);
+        .orderBy('timestamp', descending: true)
+        .snapshots();
 
-    if (_userDistrict != null && _userDistrict != "All Sri Lanka") {
-      return collection.where('location', isEqualTo: _userDistrict).snapshots();
-    }
+    return collection.map((snap) {
+      return snap.docs.where((doc) {
+        final data = doc.data()! as Map<String, dynamic>;
+        if (currentUser != null && data['ownerId'] == currentUser.uid)
+          return false;
+        if (_userDistrict != null &&
+            _userDistrict != "All Sri Lanka" &&
+            data['location'] != _userDistrict)
+          return false;
+        return true;
+      }).toList();
+    });
+  }
 
-    return collection.snapshots();
+  Stream<QuerySnapshot> _getNotifications() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return const Stream.empty();
+
+    return FirebaseFirestore.instance
+        .collection('notifications')
+        .where('ownerId', isEqualTo: user.uid)
+        .orderBy('timestamp', descending: true)
+        .snapshots();
+  }
+
+  void _openNotificationsDialog(List<QueryDocumentSnapshot> notifications) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Notifications"),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: notifications.isEmpty
+              ? const Text("No notifications")
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: notifications.length,
+                  itemBuilder: (context, index) {
+                    final doc = notifications[index];
+                    final data = doc.data() as Map<String, dynamic>? ?? {};
+                    final userName = data['userName'] ?? 'Someone';
+                    final type = data['type'] ?? 'Notification';
+                    final timestamp = data['timestamp'] as Timestamp?;
+
+                    return ListTile(
+                      title: Text('$userName - $type'),
+                      subtitle: Text(
+                        timestamp != null ? timestamp.toDate().toString() : '',
+                      ),
+                      onTap: () {
+                        Navigator.pop(ctx); // close the dialog first
+
+                        // Booking request: open Seller Dashboard with the serviceId
+                        if (type == 'booking_request' &&
+                            data['serviceId'] != null) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => SellerDashboardPage(
+                                focusServiceId: data['serviceId'],
+                              ),
+                            ),
+                          );
+                        }
+                        // Regular service notification: open Service Details
+                        else if (data['serviceId'] != null) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ServiceDetailsPage(
+                                serviceId: data['serviceId'],
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Close"),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    // While loading role or redirecting admin, show a loader
-    if (_role == null) {
+    if (_role == null)
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
 
     return Scaffold(
       backgroundColor: Colors.grey[100],
@@ -256,6 +336,43 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
             ),
+          StreamBuilder<QuerySnapshot>(
+            stream: _getNotifications(),
+            builder: (context, snap) {
+              int unreadCount = 0;
+              if (snap.hasData) unreadCount = snap.data!.docs.length;
+              return Stack(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.notifications),
+                    onPressed: () {
+                      if (snap.hasData)
+                        _openNotificationsDialog(snap.data!.docs);
+                    },
+                  ),
+                  if (unreadCount > 0)
+                    Positioned(
+                      right: 8,
+                      top: 8,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Text(
+                          unreadCount.toString(),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.location_on),
             onPressed: _chooseLocationDialog,
@@ -275,15 +392,15 @@ class _HomePageState extends State<HomePage> {
         child: const Icon(Icons.add, size: 28),
         tooltip: 'Sell a Service',
       ),
-      body: StreamBuilder<QuerySnapshot>(
+      body: StreamBuilder<List<QueryDocumentSnapshot>>(
         stream: _getServicesStream(),
         builder: (context, snap) {
           if (snap.hasError) return Center(child: Text('Error: ${snap.error}'));
           if (!snap.hasData)
             return const Center(child: CircularProgressIndicator());
 
-          final services = snap.data!.docs;
-          if (services.isEmpty) {
+          final services = snap.data!;
+          if (services.isEmpty)
             return Center(
               child: Text(
                 _userDistrict != null
@@ -292,7 +409,6 @@ class _HomePageState extends State<HomePage> {
                 style: const TextStyle(fontSize: 16),
               ),
             );
-          }
 
           return ListView.builder(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),

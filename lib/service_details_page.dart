@@ -49,6 +49,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || _ownerId == null) return;
 
+    // 1️⃣ Save booking request
     await FirebaseFirestore.instance
         .collection('services')
         .doc(widget.serviceId)
@@ -57,14 +58,17 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
         .set({
           'userId': user.uid,
           'userEmail': user.email,
+          'userName': user.displayName ?? user.email,
           'status': 'pending',
           'timestamp': FieldValue.serverTimestamp(),
         });
 
+    // 2️⃣ Add notification for seller
     await FirebaseFirestore.instance.collection('notifications').add({
-      'ownerId': _ownerId,
+      'ownerId': _ownerId, // Seller ID
       'serviceId': widget.serviceId,
       'userId': user.uid,
+      'userName': user.displayName ?? user.email,
       'type': 'booking_request',
       'status': 'unread',
       'timestamp': FieldValue.serverTimestamp(),

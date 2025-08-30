@@ -1,10 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'request_details_page.dart'; // Create this page for full details + chat
+import 'request_details_page.dart';
 
 class SellerDashboardPage extends StatelessWidget {
-  const SellerDashboardPage({super.key});
+  final String? focusServiceId;
+  final String? focusBookingId;
+
+  const SellerDashboardPage({
+    super.key,
+    this.focusServiceId,
+    this.focusBookingId,
+  });
+
+  /// Mark all notifications as read (optional)
+  Future<void> markNotificationsAsRead() async {
+    final userId = FirebaseAuth.instance.currentUser!.uid;
+    final unread = await FirebaseFirestore.instance
+        .collection('notifications')
+        .where('ownerId', isEqualTo: userId)
+        .where('status', isEqualTo: 'unread')
+        .get();
+
+    for (var doc in unread.docs) {
+      await doc.reference.update({'status': 'read'});
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -18,7 +39,55 @@ class SellerDashboardPage extends StatelessWidget {
         .where('ownerId', isEqualTo: user.uid);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Seller Dashboard')),
+      appBar: AppBar(
+        title: const Text('Seller Dashboard'),
+        actions: [
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('notifications')
+                .where('ownerId', isEqualTo: user.uid)
+                .where('status', isEqualTo: 'unread')
+                .snapshots(),
+            builder: (context, snapshot) {
+              int count = 0;
+              if (snapshot.hasData) count = snapshot.data!.docs.length;
+
+              return Stack(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.notifications),
+                    onPressed: () async {
+                      await markNotificationsAsRead();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Notifications cleared!')),
+                      );
+                    },
+                  ),
+                  if (count > 0)
+                    Positioned(
+                      right: 8,
+                      top: 8,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Text(
+                          '$count',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
       body: StreamBuilder<QuerySnapshot>(
         stream: servicesRef.snapshots(),
         builder: (context, serviceSnap) {
@@ -59,9 +128,12 @@ class SellerDashboardPage extends StatelessWidget {
                         padding: const EdgeInsets.all(8),
                         child: Text(
                           serviceName,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
+                            color: serviceId == focusServiceId
+                                ? Colors.blue
+                                : Colors.black,
                           ),
                         ),
                       ),
@@ -70,7 +142,10 @@ class SellerDashboardPage extends StatelessWidget {
                         final userEmail =
                             reqData['userEmail'] ?? reqData['userId'];
 
+                        final isFocused = reqDoc.id == focusBookingId;
+
                         return Card(
+                          color: isFocused ? Colors.yellow[100] : Colors.white,
                           margin: const EdgeInsets.symmetric(
                             horizontal: 8,
                             vertical: 4,
@@ -112,7 +187,6 @@ class SellerDashboardPage extends StatelessWidget {
                               ],
                             ),
                             onTap: () {
-                              // Navigate to full request details + chat
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
