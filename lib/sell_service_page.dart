@@ -14,7 +14,27 @@ class SellServicePage extends StatefulWidget {
 
 class _SellServicePageState extends State<SellServicePage> {
   final _formKey = GlobalKey<FormState>();
-  String _category = '';
+
+  // Category list
+  final List<String> _categories = [
+    'Electrician',
+    'Plumber',
+    'Carpenter',
+    'Cleaner / Housemaid',
+    'Cook / Home Chef',
+    'Babysitter / Nanny',
+    'Gardener',
+    'Mechanic (Bike/Car)',
+    'Washer / Laundry Helper',
+    'AC Repair Technician',
+    'Painter',
+    'Mason / Construction Helper',
+    'Pest Control',
+    'Delivery Helper',
+    'Elderly Caregiver',
+  ];
+  String? _category; // Selected category
+
   String _serviceName = '';
   String _description = '';
   String _location = '';
@@ -122,16 +142,31 @@ class _SellServicePageState extends State<SellServicePage> {
               key: _formKey,
               child: Column(
                 children: [
-                  TextFormField(
+                  // 🔹 Category Dropdown
+                  DropdownButtonFormField<String>(
+                    value: _category,
                     decoration: const InputDecoration(
                       labelText: 'Category',
                       prefixIcon: Icon(Icons.category),
+                      border: OutlineInputBorder(),
                     ),
-                    onSaved: (val) => _category = val!.trim(),
-                    validator: (val) =>
-                        val == null || val.isEmpty ? 'Enter category' : null,
+                    items: _categories.map((String cat) {
+                      return DropdownMenuItem<String>(
+                        value: cat,
+                        child: Text(cat),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      setState(() => _category = val);
+                    },
+                    validator: (val) => val == null || val.isEmpty
+                        ? 'Please select a category'
+                        : null,
+                    onSaved: (val) => _category = val,
                   ),
                   const SizedBox(height: 16),
+
+                  // Service Name
                   TextFormField(
                     decoration: const InputDecoration(
                       labelText: 'Service Name',
@@ -143,6 +178,8 @@ class _SellServicePageState extends State<SellServicePage> {
                         : null,
                   ),
                   const SizedBox(height: 16),
+
+                  // Description
                   TextFormField(
                     decoration: const InputDecoration(
                       labelText: 'Description',
@@ -181,7 +218,6 @@ class _SellServicePageState extends State<SellServicePage> {
                       ),
                     ],
                   ),
-
                   const SizedBox(height: 24),
 
                   // 🔹 Location row: GPS + Dropdown
@@ -203,9 +239,9 @@ class _SellServicePageState extends State<SellServicePage> {
                       ),
                     ],
                   ),
-
                   const SizedBox(height: 24),
 
+                  // 🔹 Save Button
                   SizedBox(
                     width: double.infinity,
                     height: 50,

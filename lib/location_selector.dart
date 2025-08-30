@@ -29,14 +29,14 @@ Future<String?> getDistrictFromCoordinates(Position pos) async {
           placemarks.first.administrativeArea;
     }
   } catch (e) {
-    print('Error fetching district: $e');
+    debugPrint('Error fetching district: $e');
   }
   return null;
 }
 
 class LocationSelector extends StatefulWidget {
   final Function(String) onLocationSelected;
-  final String? selectedLocation; // ✅ Option 1
+  final String? selectedLocation;
 
   const LocationSelector({
     super.key,
@@ -84,7 +84,14 @@ class _LocationSelectorState extends State<LocationSelector> {
   @override
   void initState() {
     super.initState();
-    _selectedDistrict = widget.selectedLocation;
+
+    // ✅ ensure the initial location is valid
+    if (widget.selectedLocation != null &&
+        _districts.contains(widget.selectedLocation)) {
+      _selectedDistrict = widget.selectedLocation;
+    } else {
+      _selectedDistrict = null;
+    }
   }
 
   Future<void> _useGPS() async {
@@ -93,8 +100,12 @@ class _LocationSelectorState extends State<LocationSelector> {
     if (pos != null) {
       final district = await getDistrictFromCoordinates(pos);
       if (district != null) {
-        setState(() => _selectedDistrict = district);
-        widget.onLocationSelected(district);
+        // only use if found district is in list, else fall back to "All Sri Lanka"
+        final normalized = _districts.contains(district)
+            ? district
+            : "All Sri Lanka";
+        setState(() => _selectedDistrict = normalized);
+        widget.onLocationSelected(normalized);
       }
     }
     setState(() => _loadingGPS = false);
@@ -108,7 +119,7 @@ class _LocationSelectorState extends State<LocationSelector> {
         ElevatedButton(
           onPressed: _loadingGPS ? null : _useGPS,
           style: ElevatedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+            padding: const EdgeInsets.all(14),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
             ),
@@ -129,7 +140,9 @@ class _LocationSelectorState extends State<LocationSelector> {
         // Dropdown for manual selection
         Expanded(
           child: DropdownButtonFormField<String>(
-            value: _selectedDistrict,
+            value: _districts.contains(_selectedDistrict)
+                ? _selectedDistrict
+                : null,
             hint: const Text('Select your district'),
             items: _districts
                 .map((d) => DropdownMenuItem(value: d, child: Text(d)))
