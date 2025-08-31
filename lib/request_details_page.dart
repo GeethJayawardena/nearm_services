@@ -147,13 +147,20 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
         .collection('requests')
         .doc(widget.bookingId)
         .update({'paymentStatus': 'paid'});
+
     _loadData();
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Payment done! Please submit review.')),
     );
   }
 
+  /// Submit review AND save purchase record
   Future<void> _submitReview() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || requestData == null) return;
+
+    // 1. Update request with review
     await FirebaseFirestore.instance
         .collection('services')
         .doc(widget.serviceId)
@@ -163,7 +170,29 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
           'review': {'comment': reviewController.text, 'rating': rating},
           'status': 'done',
         });
+
+    // 2. Save purchase record
+    final serviceDoc = await FirebaseFirestore.instance
+        .collection('services')
+        .doc(widget.serviceId)
+        .get();
+
+    if (serviceDoc.exists) {
+      final serviceData = serviceDoc.data()!;
+      await FirebaseFirestore.instance.collection('purchases').add({
+        'buyerId': user.uid,
+        'buyerName': user.displayName ?? user.email,
+        'sellerId': serviceData['ownerId'],
+        'sellerName': serviceData['ownerName'] ?? 'Unknown',
+        'serviceName': serviceData['name'] ?? 'Unknown Service',
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+    }
+
     _loadData();
+    reviewController.clear();
+    rating = 0;
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Review submitted! Booking finished.')),
     );
@@ -194,14 +223,12 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
               Text('Proposed Price: \$${proposedPrice.toString()}'),
             const SizedBox(height: 16),
 
-            // Seller: propose price if status is pending
             if (isSeller && status == 'pending')
               ElevatedButton(
                 onPressed: _showPriceDialog,
                 child: const Text("Propose Price"),
               ),
 
-            // Buyer: accept/reject price
             if (!isSeller &&
                 status == 'price_proposed' &&
                 requestData!['buyerAgreed'] == null)
@@ -226,7 +253,6 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
                 ],
               ),
 
-            // Buyer: show cancelled message
             if (!isSeller && status == 'cancelled')
               const Text(
                 'Booking cancelled',
@@ -236,7 +262,6 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
                 ),
               ),
 
-            // Seller: complete job
             if (isSeller && status == 'buyer_agreed')
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
@@ -244,14 +269,12 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
                 child: const Text('Mark Job Completed'),
               ),
 
-            // Buyer: pay after job completed and not paid
             if (!isSeller && status == 'completed' && paymentStatus != 'paid')
               ElevatedButton(
                 onPressed: _submitPayment,
                 child: const Text('Pay Now'),
               ),
 
-            // Buyer: submit review after payment
             if (!isSeller && status == 'completed' && paymentStatus == 'paid')
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -279,7 +302,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
                   ),
                   ElevatedButton(
                     onPressed: _submitReview,
-                    child: const Text('Submit Review'),
+                    child: const Text('Submit Review & Finish'),
                   ),
                 ],
               ),

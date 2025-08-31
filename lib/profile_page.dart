@@ -13,7 +13,6 @@ class _ProfilePageState extends State<ProfilePage>
     with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _bankFormKey = GlobalKey<FormState>();
-
   late TabController _tabController;
 
   // Profile fields
@@ -72,8 +71,6 @@ class _ProfilePageState extends State<ProfilePage>
     'Union Bank',
     'Seylan Bank',
     'Amana Bank',
-    'NTB Bank',
-    'DFCC Vardhana Bank',
   ];
 
   @override
@@ -98,8 +95,12 @@ class _ProfilePageState extends State<ProfilePage>
         _nameController.text = data['name'] ?? '';
         _emailController.text = user.email ?? '';
         _addressController.text = data['address'] ?? '';
-        _district = data['district'] ?? 'All Sri Lanka';
-        _bankName = data['bankName'];
+        _district = _districts.contains(data['district'])
+            ? data['district']
+            : 'All Sri Lanka';
+        _bankName = _banksSriLanka.contains(data['bankName'])
+            ? data['bankName']
+            : null;
         _accountController.text = data['accountNumber'] ?? '';
         _cardController.text = data['cardNumber'] ?? '';
         _expiryController.text = data['expiryDate'] ?? '';
@@ -108,13 +109,13 @@ class _ProfilePageState extends State<ProfilePage>
     } else {
       setState(() {
         _emailController.text = user.email ?? '';
+        _district = 'All Sri Lanka';
       });
     }
   }
 
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
-
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
@@ -132,7 +133,6 @@ class _ProfilePageState extends State<ProfilePage>
 
   Future<void> _saveBankDetails() async {
     if (!_bankFormKey.currentState!.validate()) return;
-
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
@@ -150,8 +150,34 @@ class _ProfilePageState extends State<ProfilePage>
     ).showSnackBar(const SnackBar(content: Text('Bank details saved')));
   }
 
+  Widget _statusChip(String status) {
+    Color color;
+    switch (status) {
+      case "Pending":
+        color = Colors.orange;
+        break;
+      case "Accepted":
+        color = Colors.blue;
+        break;
+      case "Completed":
+        color = Colors.green;
+        break;
+      case "Rejected":
+        color = Colors.red;
+        break;
+      default:
+        color = Colors.grey;
+    }
+    return Chip(
+      label: Text(status, style: const TextStyle(color: Colors.white)),
+      backgroundColor: color,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Profile'),
@@ -166,209 +192,223 @@ class _ProfilePageState extends State<ProfilePage>
       body: TabBarView(
         controller: _tabController,
         children: [
+          // Profile Tab
           SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
-                // Profile Section
-                Card(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  elevation: 3,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text(
-                                'Profile Info',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              TextButton(
-                                onPressed: () => setState(
-                                  () => _editingProfile = !_editingProfile,
-                                ),
-                                child: Text(
-                                  _editingProfile ? 'Cancel' : 'Edit',
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          TextFormField(
-                            controller: _nameController,
-                            decoration: const InputDecoration(
-                              labelText: 'Name',
-                            ),
-                            readOnly: !_editingProfile,
-                            validator: (val) => (val == null || val.isEmpty)
-                                ? 'Enter name'
-                                : null,
-                          ),
-                          const SizedBox(height: 12),
-                          TextFormField(
-                            controller: _emailController,
-                            decoration: const InputDecoration(
-                              labelText: 'Email',
-                            ),
-                            readOnly: true,
-                          ),
-                          const SizedBox(height: 12),
-                          TextFormField(
-                            controller: _addressController,
-                            decoration: const InputDecoration(
-                              labelText: 'Address',
-                            ),
-                            readOnly: !_editingProfile,
-                          ),
-                          const SizedBox(height: 12),
-                          DropdownButtonFormField<String>(
-                            value: _district,
-                            decoration: const InputDecoration(
-                              labelText: 'District',
-                            ),
-                            items: _districts
-                                .map(
-                                  (d) => DropdownMenuItem(
-                                    value: d,
-                                    child: Text(d),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: _editingProfile
-                                ? (val) => setState(() => _district = val)
-                                : null,
-                          ),
-                          const SizedBox(height: 16),
-                          if (_editingProfile)
-                            ElevatedButton(
-                              onPressed: _saveProfile,
-                              child: const Text('Save Profile'),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
+                _buildProfileCard(),
                 const SizedBox(height: 16),
-
-                // Bank Section
-                Card(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  elevation: 3,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Form(
-                      key: _bankFormKey,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text(
-                                'Bank Details',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              TextButton(
-                                onPressed: () => setState(
-                                  () => _editingBank = !_editingBank,
-                                ),
-                                child: Text(_editingBank ? 'Cancel' : 'Edit'),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          DropdownButtonFormField<String>(
-                            value: _bankName,
-                            decoration: const InputDecoration(
-                              labelText: 'Bank Name',
-                            ),
-                            items: _banksSriLanka
-                                .map(
-                                  (b) => DropdownMenuItem(
-                                    value: b,
-                                    child: Text(b),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: _editingBank
-                                ? (val) => setState(() => _bankName = val)
-                                : null,
-                            validator: (val) =>
-                                val == null ? 'Select bank' : null,
-                          ),
-                          const SizedBox(height: 12),
-                          TextFormField(
-                            controller: _accountController,
-                            decoration: const InputDecoration(
-                              labelText: 'Account Number',
-                            ),
-                            readOnly: !_editingBank,
-                          ),
-                          const SizedBox(height: 12),
-                          TextFormField(
-                            controller: _cardController,
-                            decoration: const InputDecoration(
-                              labelText: 'Card Number',
-                            ),
-                            readOnly: !_editingBank,
-                            obscureText: true,
-                          ),
-                          const SizedBox(height: 12),
-                          TextFormField(
-                            controller: _expiryController,
-                            decoration: const InputDecoration(
-                              labelText: 'Expiry Date (MM/YY)',
-                            ),
-                            readOnly: !_editingBank,
-                            obscureText: true,
-                          ),
-                          const SizedBox(height: 12),
-                          TextFormField(
-                            controller: _cvvController,
-                            decoration: const InputDecoration(labelText: 'CVV'),
-                            readOnly: !_editingBank,
-                            obscureText: true,
-                          ),
-                          const SizedBox(height: 16),
-                          if (_editingBank)
-                            ElevatedButton(
-                              onPressed: _saveBankDetails,
-                              child: const Text('Save Bank Details'),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
+                _buildBankCard(),
               ],
             ),
           ),
 
-          // Dashboard Tab Placeholder
-          Center(
-            child: Text(
-              'Dashboard content here',
-              style: TextStyle(fontSize: 18, color: Colors.grey[700]),
+          // Dashboard Tab
+          SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  "My Bookings",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('bookings')
+                      .where('buyerId', isEqualTo: user?.uid)
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData) {
+                      return const CircularProgressIndicator();
+                    }
+                    final docs = snapshot.data!.docs;
+                    if (docs.isEmpty) return const Text("No bookings yet.");
+                    return Column(
+                      children: docs.map((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        return ListTile(
+                          title: Text(data['serviceTitle'] ?? 'Service'),
+                          subtitle: _statusChip(data['status'] ?? 'Pending'),
+                        );
+                      }).toList(),
+                    );
+                  },
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  "My Services",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('services')
+                      .where('sellerId', isEqualTo: user?.uid)
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData)
+                      return const CircularProgressIndicator();
+                    final docs = snapshot.data!.docs;
+                    if (docs.isEmpty) return const Text("No services posted.");
+                    return Column(
+                      children: docs.map((doc) {
+                        final data = doc.data() as Map<String, dynamic>;
+                        return ListTile(
+                          title: Text(data['title'] ?? 'Service'),
+                          subtitle: _statusChip(data['status'] ?? 'Pending'),
+                        );
+                      }).toList(),
+                    );
+                  },
+                ),
+              ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildProfileCard() {
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 3,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _header("Profile Info", () {
+                setState(() => _editingProfile = !_editingProfile);
+              }, _editingProfile),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _nameController,
+                decoration: const InputDecoration(labelText: 'Name'),
+                readOnly: !_editingProfile,
+                validator: (val) =>
+                    val == null || val.isEmpty ? 'Enter name' : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _emailController,
+                decoration: const InputDecoration(labelText: 'Email'),
+                readOnly: true,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _addressController,
+                decoration: const InputDecoration(labelText: 'Address'),
+                readOnly: !_editingProfile,
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: _districts.contains(_district)
+                    ? _district
+                    : 'All Sri Lanka',
+                decoration: const InputDecoration(labelText: 'District'),
+                items: _districts
+                    .map((d) => DropdownMenuItem(value: d, child: Text(d)))
+                    .toList(),
+                onChanged: _editingProfile
+                    ? (val) => setState(() => _district = val)
+                    : null,
+              ),
+              const SizedBox(height: 16),
+              if (_editingProfile)
+                ElevatedButton(
+                  onPressed: _saveProfile,
+                  child: const Text('Save Profile'),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBankCard() {
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 3,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Form(
+          key: _bankFormKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _header("Bank Details", () {
+                setState(() => _editingBank = !_editingBank);
+              }, _editingBank),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: _banksSriLanka.contains(_bankName) ? _bankName : null,
+                decoration: const InputDecoration(labelText: 'Bank Name'),
+                items: _banksSriLanka
+                    .map((b) => DropdownMenuItem(value: b, child: Text(b)))
+                    .toList(),
+                onChanged: _editingBank
+                    ? (val) => setState(() => _bankName = val)
+                    : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _accountController,
+                decoration: const InputDecoration(labelText: 'Account Number'),
+                readOnly: !_editingBank,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _cardController,
+                decoration: const InputDecoration(labelText: 'Card Number'),
+                readOnly: !_editingBank,
+                obscureText: true,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _expiryController,
+                decoration: const InputDecoration(
+                  labelText: 'Expiry Date (MM/YY)',
+                ),
+                readOnly: !_editingBank,
+                obscureText: true,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _cvvController,
+                decoration: const InputDecoration(labelText: 'CVV'),
+                readOnly: !_editingBank,
+                obscureText: true,
+              ),
+              const SizedBox(height: 16),
+              if (_editingBank)
+                ElevatedButton(
+                  onPressed: _saveBankDetails,
+                  child: const Text('Save Bank Details'),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _header(String title, VoidCallback onTap, bool editing) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        TextButton(onPressed: onTap, child: Text(editing ? "Cancel" : "Edit")),
+      ],
     );
   }
 }

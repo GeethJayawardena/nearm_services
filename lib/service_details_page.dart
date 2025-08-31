@@ -83,8 +83,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
             final bd = _requestData!['bookingDate'];
             if (bd is Timestamp)
               _selectedDate = bd.toDate();
-            else if (bd is DateTime)
-              _selectedDate = bd;
+            else if (bd is DateTime) _selectedDate = bd;
           }
           if (_requestData!['buyerReview'] != null &&
               _requestData!['buyerReview']['rating'] != null) {
@@ -125,17 +124,17 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
         .collection('requests')
         .doc(user.uid)
         .set({
-          'userId': user.uid,
-          'userEmail': user.email,
-          'userName': user.displayName ?? user.email,
-          'status': 'pending',
-          'timestamp': FieldValue.serverTimestamp(),
-          'bookingDate': Timestamp.fromDate(_selectedDate!),
-          'buyerAgreed': null,
-          'proposedPrice': null,
-          'paymentStatus': null,
-          'buyerReview': null,
-        });
+      'userId': user.uid,
+      'userEmail': user.email,
+      'userName': user.displayName ?? user.email,
+      'status': 'pending',
+      'timestamp': FieldValue.serverTimestamp(),
+      'bookingDate': Timestamp.fromDate(_selectedDate!),
+      'buyerAgreed': null,
+      'proposedPrice': null,
+      'paymentStatus': null,
+      'buyerReview': null,
+    });
 
     setState(() {
       _requestData = {
@@ -150,9 +149,8 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
       };
     });
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Booking requested!')));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('Booking requested!')));
   }
 
   Future<void> _proposePrice() async {
@@ -187,9 +185,8 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
           .update({'status': 'cancelled'});
 
       setState(() => _requestData = null);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Deal cancelled')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Deal cancelled')));
       return;
     }
 
@@ -205,9 +202,8 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
       _requestData!['buyerAgreed'] = true;
     });
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('You agreed to the price!')));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('You agreed to the price!')));
   }
 
   Future<void> _completeJob() async {
@@ -233,20 +229,41 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
   Future<void> _submitReviewAndPayment() async {
     if (_requestData == null) return;
     final user = FirebaseAuth.instance.currentUser!;
+
+    // 1. Update request document
     await FirebaseFirestore.instance
         .collection('services')
         .doc(widget.serviceId)
         .collection('requests')
         .doc(user.uid)
         .update({
-          'paymentStatus': 'paid',
-          'buyerReview': {
-            'comment': _reviewController.text.trim(),
-            'rating': _rating,
-          },
-          'status': 'done',
-        });
+      'paymentStatus': 'paid',
+      'buyerReview': {
+        'comment': _reviewController.text.trim(),
+        'rating': _rating,
+      },
+      'status': 'done',
+    });
 
+    // 2. Add to purchases collection
+    final serviceDoc = await FirebaseFirestore.instance
+        .collection('services')
+        .doc(widget.serviceId)
+        .get();
+
+    if (serviceDoc.exists) {
+      final serviceData = serviceDoc.data()!;
+      await FirebaseFirestore.instance.collection('purchases').add({
+        'buyerId': user.uid,
+        'buyerName': user.displayName ?? user.email,
+        'sellerId': serviceData['ownerId'],
+        'sellerName': serviceData['ownerName'] ?? 'Unknown',
+        'serviceName': serviceData['name'] ?? 'Unknown Service',
+        'timestamp': FieldValue.serverTimestamp(),
+      });
+    }
+
+    // 3. Clear local state
     setState(() {
       _requestData = null;
       _selectedDate = null;
@@ -255,8 +272,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Payment done & review submitted!')),
-    );
+        const SnackBar(content: Text('Payment done & review submitted!')));
   }
 
   void _openChat() {
@@ -292,9 +308,8 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                   child: Text(
                     _selectedDate == null
                         ? 'Select Booking Date'
-                        : "Booking Date: ${_selectedDate!.toLocal()}".split(
-                            ' ',
-                          )[0],
+                        : "Booking Date: ${_selectedDate!.toLocal()}"
+                            .split(' ')[0],
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -434,9 +449,8 @@ class PaymentPage extends StatelessWidget {
       body: Center(
         child: ElevatedButton(
           onPressed: () {
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(const SnackBar(content: Text('Payment completed!')));
+            ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Payment completed!')));
             Navigator.pop(context);
           },
           child: const Text('Pay \$100 (Sample)'),
