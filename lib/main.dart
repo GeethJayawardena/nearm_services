@@ -10,6 +10,9 @@ import 'sell_service_page.dart';
 import 'create_account_page.dart';
 import 'admin_dashboard.dart';
 
+// Global RouteObserver for page refresh
+final RouteObserver<ModalRoute> routeObserver = RouteObserver<ModalRoute>();
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
@@ -25,6 +28,7 @@ class MyApp extends StatelessWidget {
       title: 'NearMe Services',
       debugShowCheckedModeBanner: false,
       home: const LandingPage(),
+      navigatorObservers: [routeObserver], // Add this for RouteObserver
       routes: {
         '/login-choice': (context) => const LoginChoicePage(),
         '/login-email': (context) => const EmailLoginPage(),

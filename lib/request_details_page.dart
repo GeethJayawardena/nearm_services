@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'chat_page.dart'; // Make sure this file exists
+import 'chat_page.dart';
 
-class RequestDetailsPage extends StatelessWidget {
+class RequestDetailsPage extends StatefulWidget {
   final String bookingId;
   final String serviceId;
   final String userId;
@@ -15,45 +15,73 @@ class RequestDetailsPage extends StatelessWidget {
     required this.userId,
   });
 
-  Future<Map<String, dynamic>?> _fetchRequestDetails() async {
-    final doc = await FirebaseFirestore.instance
+  @override
+  State<RequestDetailsPage> createState() => _RequestDetailsPageState();
+}
+
+class _RequestDetailsPageState extends State<RequestDetailsPage> {
+  Map<String, dynamic>? requestData;
+  Map<String, dynamic>? userData;
+  bool isSeller = false;
+  double rating = 0;
+  final TextEditingController reviewController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    final serviceDoc = await FirebaseFirestore.instance
         .collection('services')
-        .doc(serviceId)
+        .doc(widget.serviceId)
+        .get();
+    if (!serviceDoc.exists) return;
+
+    final ownerId = serviceDoc['ownerId'];
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      isSeller = user.uid == ownerId;
+    }
+
+    final reqDoc = await FirebaseFirestore.instance
+        .collection('services')
+        .doc(widget.serviceId)
         .collection('requests')
-        .doc(bookingId)
+        .doc(widget.bookingId)
         .get();
 
-    if (!doc.exists) return null;
-    return doc.data()!;
-  }
-
-  Future<Map<String, dynamic>?> _fetchUserDetails(String userId) async {
-    final doc = await FirebaseFirestore.instance
+    final uDoc = await FirebaseFirestore.instance
         .collection('users')
-        .doc(userId)
+        .doc(widget.userId)
         .get();
-    if (!doc.exists) return null;
-    return doc.data()!;
+
+    setState(() {
+      requestData = reqDoc.data();
+      userData = uDoc.exists ? uDoc.data() : null;
+    });
   }
 
-  Future<void> _proposePrice(BuildContext context, double price) async {
+  Future<void> _proposePrice(double price) async {
     await FirebaseFirestore.instance
         .collection('services')
-        .doc(serviceId)
+        .doc(widget.serviceId)
         .collection('requests')
-        .doc(bookingId)
+        .doc(widget.bookingId)
         .update({
           'proposedPrice': price,
-          'buyerAgreed': null, // reset previous response
+          'status': 'price_proposed',
+          'buyerAgreed': null,
         });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Price \$${price.toString()} sent to buyer')),
     );
+    _loadData();
   }
 
-  void _showPriceDialog(BuildContext context) {
+  void _showPriceDialog() {
     final controller = TextEditingController();
-
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -72,7 +100,7 @@ class RequestDetailsPage extends StatelessWidget {
             onPressed: () {
               final price = double.tryParse(controller.text);
               if (price != null) {
-                _proposePrice(context, price);
+                _proposePrice(price);
                 Navigator.pop(context);
               }
             },
@@ -83,163 +111,199 @@ class RequestDetailsPage extends StatelessWidget {
     );
   }
 
+  Future<void> _buyerRespond(bool agreed) async {
+    if (agreed) {
+      await FirebaseFirestore.instance
+          .collection('services')
+          .doc(widget.serviceId)
+          .collection('requests')
+          .doc(widget.bookingId)
+          .update({'buyerAgreed': true, 'status': 'buyer_agreed'});
+    } else {
+      await FirebaseFirestore.instance
+          .collection('services')
+          .doc(widget.serviceId)
+          .collection('requests')
+          .doc(widget.bookingId)
+          .update({'buyerAgreed': false, 'status': 'cancelled'});
+    }
+    _loadData();
+  }
+
+  Future<void> _completeJob() async {
+    await FirebaseFirestore.instance
+        .collection('services')
+        .doc(widget.serviceId)
+        .collection('requests')
+        .doc(widget.bookingId)
+        .update({'status': 'completed'});
+    _loadData();
+  }
+
+  Future<void> _submitPayment() async {
+    await FirebaseFirestore.instance
+        .collection('services')
+        .doc(widget.serviceId)
+        .collection('requests')
+        .doc(widget.bookingId)
+        .update({'paymentStatus': 'paid'});
+    _loadData();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Payment done! Please submit review.')),
+    );
+  }
+
+  Future<void> _submitReview() async {
+    await FirebaseFirestore.instance
+        .collection('services')
+        .doc(widget.serviceId)
+        .collection('requests')
+        .doc(widget.bookingId)
+        .update({
+          'review': {'comment': reviewController.text, 'rating': rating},
+          'status': 'done',
+        });
+    _loadData();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Review submitted! Booking finished.')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (requestData == null || userData == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    final status = requestData!['status'] ?? 'pending';
+    final proposedPrice = requestData!['proposedPrice'];
+    final paymentStatus = requestData!['paymentStatus'];
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Booking Request Details')),
-      body: FutureBuilder<Map<String, dynamic>?>(
-        future: _fetchRequestDetails(),
-        builder: (context, requestSnap) {
-          if (requestSnap.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      appBar: AppBar(title: const Text('Booking Details')),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('User: ${userData!['name'] ?? 'N/A'}'),
+            Text('Email: ${userData!['email'] ?? 'N/A'}'),
+            const Divider(height: 32),
+            Text('Status: $status'),
+            if (proposedPrice != null && status != 'cancelled')
+              Text('Proposed Price: \$${proposedPrice.toString()}'),
+            const SizedBox(height: 16),
 
-          final requestData = requestSnap.data;
-          if (requestData == null) {
-            return const Center(child: Text('Request not found.'));
-          }
+            // Seller: propose price if status is pending
+            if (isSeller && status == 'pending')
+              ElevatedButton(
+                onPressed: _showPriceDialog,
+                child: const Text("Propose Price"),
+              ),
 
-          return FutureBuilder<Map<String, dynamic>?>(
-            future: _fetchUserDetails(userId),
-            builder: (context, userSnap) {
-              final userData = userSnap.data;
+            // Buyer: accept/reject price
+            if (!isSeller &&
+                status == 'price_proposed' &&
+                requestData!['buyerAgreed'] == null)
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => _buyerRespond(true),
+                      child: const Text('Accept'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                      ),
+                      onPressed: () => _buyerRespond(false),
+                      child: const Text('Reject'),
+                    ),
+                  ),
+                ],
+              ),
 
-              return Padding(
-                padding: const EdgeInsets.all(16),
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            // Buyer: show cancelled message
+            if (!isSeller && status == 'cancelled')
+              const Text(
+                'Booking cancelled',
+                style: TextStyle(
+                  color: Colors.red,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+
+            // Seller: complete job
+            if (isSeller && status == 'buyer_agreed')
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                onPressed: _completeJob,
+                child: const Text('Mark Job Completed'),
+              ),
+
+            // Buyer: pay after job completed and not paid
+            if (!isSeller && status == 'completed' && paymentStatus != 'paid')
+              ElevatedButton(
+                onPressed: _submitPayment,
+                child: const Text('Pay Now'),
+              ),
+
+            // Buyer: submit review after payment
+            if (!isSeller && status == 'completed' && paymentStatus == 'paid')
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: reviewController,
+                    decoration: const InputDecoration(
+                      hintText: 'Write review...',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
                     children: [
-                      // --- User Info ---
-                      Text(
-                        'User Details',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 8),
-                      Text('Name: ${userData?['name'] ?? 'N/A'}'),
-                      Text('Email: ${userData?['email'] ?? 'N/A'}'),
-                      const Divider(height: 32),
-
-                      // --- Booking Info ---
-                      Text(
-                        'Booking Details',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 8),
-                      Text('Status: ${requestData['status']}'),
-                      Text(
-                        'Requested At: ${requestData['timestamp'] != null ? (requestData['timestamp'] as Timestamp).toDate().toString() : 'N/A'}',
-                      ),
-                      Text(
-                        'Selected Date: ${requestData['selectedDate'] != null ? (requestData['selectedDate'] as Timestamp).toDate().toString() : 'N/A'}',
-                      ),
-                      const SizedBox(height: 16),
-
-                      // --- Proposed Price (Seller) ---
-                      if (requestData['proposedPrice'] != null)
-                        Text(
-                          'Proposed Price: \$${requestData['proposedPrice']}',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      if (requestData['buyerAgreed'] != null)
-                        Text(
-                          'Buyer Response: ${requestData['buyerAgreed']! ? "Agreed" : "Rejected"}',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: requestData['buyerAgreed']!
-                                ? Colors.green
-                                : Colors.red,
-                          ),
-                        ),
-                      const SizedBox(height: 16),
-
-                      // --- Seller can propose price if status is pending ---
-                      if (requestData['status'] == 'pending')
-                        ElevatedButton(
-                          onPressed: () => _showPriceDialog(context),
-                          child: const Text("Propose Price"),
-                        ),
-
-                      const SizedBox(height: 16),
-
-                      // --- Accept / Reject Booking Buttons ---
-                      if (requestData['status'] == 'pending')
-                        Row(
-                          children: [
-                            Expanded(
-                              child: ElevatedButton(
-                                onPressed: () {
-                                  FirebaseFirestore.instance
-                                      .collection('services')
-                                      .doc(serviceId)
-                                      .collection('requests')
-                                      .doc(bookingId)
-                                      .update({'status': 'approved'});
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Booking approved'),
-                                    ),
-                                  );
-                                },
-                                child: const Text('Accept'),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: ElevatedButton(
-                                onPressed: () {
-                                  FirebaseFirestore.instance
-                                      .collection('services')
-                                      .doc(serviceId)
-                                      .collection('requests')
-                                      .doc(bookingId)
-                                      .update({'status': 'rejected'});
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Booking rejected'),
-                                    ),
-                                  );
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.red,
-                                ),
-                                child: const Text('Reject'),
-                              ),
-                            ),
-                          ],
-                        ),
-
-                      const SizedBox(height: 32),
-
-                      // --- Chat Button ---
-                      Center(
-                        child: ElevatedButton.icon(
-                          icon: const Icon(Icons.chat),
-                          label: const Text('Chat with User'),
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => ChatPage(
-                                  serviceId: serviceId,
-                                  otherUserId: userId,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
+                      const Text('Rating:'),
+                      Slider(
+                        value: rating,
+                        min: 0,
+                        max: 5,
+                        divisions: 5,
+                        label: rating.toString(),
+                        onChanged: (val) => setState(() => rating = val),
                       ),
                     ],
                   ),
-                ),
-              );
-            },
-          );
-        },
+                  ElevatedButton(
+                    onPressed: _submitReview,
+                    child: const Text('Submit Review'),
+                  ),
+                ],
+              ),
+
+            const SizedBox(height: 32),
+            Center(
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.chat),
+                label: const Text('Chat'),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ChatPage(
+                        serviceId: widget.serviceId,
+                        otherUserId: widget.userId,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -190,7 +190,6 @@ class _SellerDashboardPageState extends State<SellerDashboardPage> {
                     .collection('services')
                     .doc(serviceId)
                     .collection('requests')
-                    .where('status', isEqualTo: 'pending')
                     .snapshots(),
                 builder: (context, reqSnap) {
                   if (!reqSnap.hasData) return const SizedBox();
@@ -218,14 +217,40 @@ class _SellerDashboardPageState extends State<SellerDashboardPage> {
                         final userEmail =
                             reqData['userEmail'] ?? reqData['userId'];
 
-                        // Only show booking request info, no date or buttons
+                        // Build subtitle dynamically
+                        String subtitle = '';
+                        Color subtitleColor = Colors.black;
+                        if (reqData['status'] == 'pending') {
+                          subtitle = 'Pending booking request';
+                          subtitleColor = Colors.orange;
+                        } else if (reqData['status'] == 'approved' &&
+                            reqData['buyerAgreed'] == true) {
+                          subtitle = 'Buyer accepted proposed price';
+                          subtitleColor = Colors.green;
+                        } else if (reqData['status'] == 'completed' &&
+                            reqData['jobCompleted'] == true) {
+                          subtitle =
+                              'Job Completed • Payment: ${reqData['paymentStatus'] ?? 'Pending'}';
+                          subtitleColor = Colors.blue;
+                          if (reqData['buyerReview'] != null) {
+                            subtitle +=
+                                ' • Review: ${reqData['buyerReview']['rating']}/5';
+                          }
+                        }
+
                         return Card(
                           margin: const EdgeInsets.symmetric(
                             horizontal: 8,
                             vertical: 4,
                           ),
                           child: ListTile(
-                            title: Text('Booking request from $userEmail'),
+                            title: Text('Booking from $userEmail'),
+                            subtitle: subtitle.isNotEmpty
+                                ? Text(
+                                    subtitle,
+                                    style: TextStyle(color: subtitleColor),
+                                  )
+                                : null,
                             onTap: () {
                               Navigator.push(
                                 context,
@@ -274,7 +299,6 @@ class AllNotificationsPage extends StatelessWidget {
           }
 
           final notifications = snapshot.data!.docs;
-
           if (notifications.isEmpty) {
             return const Center(child: Text("No notifications yet."));
           }

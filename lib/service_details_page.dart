@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'chat_page.dart';
+import 'main.dart'; // routeObserver
 
 class ServiceDetailsPage extends StatefulWidget {
   final String serviceId;
@@ -11,18 +12,37 @@ class ServiceDetailsPage extends StatefulWidget {
   State<ServiceDetailsPage> createState() => _ServiceDetailsPageState();
 }
 
-class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
-  double _rating = 0;
+class _ServiceDetailsPageState extends State<ServiceDetailsPage>
+    with RouteAware {
   Map<String, dynamic>? _requestData;
+  bool _isSeller = false;
   String? _ownerId;
-  DateTime? _selectedDate; // selected booking date
-
-  double? _proposedPrice; // seller proposed price
-  bool? _buyerAgreed; // buyer response: null, true, false
+  DateTime? _selectedDate;
+  final TextEditingController _reviewController = TextEditingController();
+  final TextEditingController _priceController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
+    _loadServiceData();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    routeObserver.subscribe(this, ModalRoute.of(context)!);
+  }
+
+  @override
+  void dispose() {
+    routeObserver.unsubscribe(this);
+    _reviewController.dispose();
+    _priceController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didPopNext() {
     _loadServiceData();
   }
 
@@ -34,36 +54,41 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
     if (!serviceDoc.exists) return;
 
     _ownerId = serviceDoc['ownerId'];
-
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      final requestDoc = await FirebaseFirestore.instance
-          .collection('services')
-          .doc(widget.serviceId)
-          .collection('requests')
-          .doc(user.uid)
-          .get();
+      _isSeller = user.uid == _ownerId;
+      DocumentSnapshot? requestDoc;
+
+      if (_isSeller) {
+        final requests = await FirebaseFirestore.instance
+            .collection('services')
+            .doc(widget.serviceId)
+            .collection('requests')
+            .get();
+        if (requests.docs.isNotEmpty) requestDoc = requests.docs.first;
+      } else {
+        requestDoc = await FirebaseFirestore.instance
+            .collection('services')
+            .doc(widget.serviceId)
+            .collection('requests')
+            .doc(user.uid)
+            .get();
+      }
 
       setState(() {
-        if (requestDoc.exists) {
-          _requestData = requestDoc.data()!;
-          final data = _requestData!;
-
-          if (data['bookingDate'] != null) {
-            final bd = data['bookingDate'];
-            if (bd is Timestamp) _selectedDate = bd.toDate();
-            else if (bd is DateTime) _selectedDate = bd;
+        if (requestDoc != null && requestDoc.exists) {
+          _requestData = requestDoc.data()! as Map<String, dynamic>;
+          // Only set _selectedDate from Firestore if user has NOT already picked a date
+          if (_selectedDate == null && _requestData!['bookingDate'] != null) {
+            final bd = _requestData!['bookingDate'];
+            if (bd is Timestamp)
+              _selectedDate = bd.toDate();
+            else if (bd is DateTime)
+              _selectedDate = bd;
           }
-
-          _proposedPrice = data['proposedPrice'] != null
-              ? (data['proposedPrice'] as num).toDouble()
-              : null;
-
-          _buyerAgreed = data['buyerAgreed']; // null, true, false
         } else {
           _requestData = null;
-          _proposedPrice = null;
-          _buyerAgreed = null;
+          // Do NOT reset _selectedDate here
         }
       });
     }
@@ -77,14 +102,12 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
       firstDate: now,
       lastDate: now.add(const Duration(days: 365)),
     );
-
     if (picked != null) setState(() => _selectedDate = picked);
   }
 
   Future<void> _requestBooking() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || _ownerId == null) return;
-
     if (_selectedDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Please select a booking date")),
@@ -98,25 +121,17 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
         .collection('requests')
         .doc(user.uid)
         .set({
-      'userId': user.uid,
-      'userEmail': user.email,
-      'userName': user.displayName ?? user.email,
-      'status': 'pending',
-      'timestamp': FieldValue.serverTimestamp(),
-      'bookingDate': Timestamp.fromDate(_selectedDate!),
-      'buyerAgreed': null,
-      'proposedPrice': null,
-    });
-
-    await FirebaseFirestore.instance.collection('notifications').add({
-      'ownerId': _ownerId,
-      'serviceId': widget.serviceId,
-      'userId': user.uid,
-      'userName': user.displayName ?? user.email,
-      'type': 'booking_request',
-      'status': 'unread',
-      'timestamp': FieldValue.serverTimestamp(),
-    });
+          'userId': user.uid,
+          'userEmail': user.email,
+          'userName': user.displayName ?? user.email,
+          'status': 'pending',
+          'timestamp': FieldValue.serverTimestamp(),
+          'bookingDate': Timestamp.fromDate(_selectedDate!),
+          'buyerAgreed': null,
+          'proposedPrice': null,
+          'paymentStatus': null,
+          'buyerReview': null,
+        });
 
     setState(() {
       _requestData = {
@@ -129,13 +144,113 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
       };
     });
 
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Booking requested!')));
+  }
+
+  Future<void> _proposePrice() async {
+    if (_requestData == null || !_isSeller) return;
+    final buyerId = _requestData!['userId'];
+    final price = double.tryParse(_priceController.text.trim());
+    if (price == null) return;
+
+    await FirebaseFirestore.instance
+        .collection('services')
+        .doc(widget.serviceId)
+        .collection('requests')
+        .doc(buyerId)
+        .update({'proposedPrice': price, 'status': 'price_proposed'});
+
+    setState(() {
+      _requestData!['status'] = 'price_proposed';
+      _requestData!['proposedPrice'] = price;
+      _priceController.clear();
+    });
+  }
+
+  Future<void> _respondToPrice(bool agreed) async {
+    if (_requestData == null) return;
+    final user = FirebaseAuth.instance.currentUser!;
+    if (!agreed) {
+      await FirebaseFirestore.instance
+          .collection('services')
+          .doc(widget.serviceId)
+          .collection('requests')
+          .doc(user.uid)
+          .update({'status': 'cancelled'});
+
+      setState(() => _requestData = null);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Deal cancelled')));
+      return;
+    }
+
+    await FirebaseFirestore.instance
+        .collection('services')
+        .doc(widget.serviceId)
+        .collection('requests')
+        .doc(user.uid)
+        .update({'buyerAgreed': true, 'status': 'buyer_agreed'});
+
+    setState(() {
+      _requestData!['status'] = 'buyer_agreed';
+      _requestData!['buyerAgreed'] = true;
+    });
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('You agreed to the price!')));
+  }
+
+  Future<void> _completeJob() async {
+    if (_requestData == null || !_isSeller) return;
+    final buyerId = _requestData!['userId'];
+    await FirebaseFirestore.instance
+        .collection('services')
+        .doc(widget.serviceId)
+        .collection('requests')
+        .doc(buyerId)
+        .update({'status': 'completed'});
+
+    setState(() => _requestData!['status'] = 'completed');
+  }
+
+  void _payNow() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const PaymentPage()),
+    );
+  }
+
+  Future<void> _submitReviewAndPayment() async {
+    if (_requestData == null) return;
+    final user = FirebaseAuth.instance.currentUser!;
+    await FirebaseFirestore.instance
+        .collection('services')
+        .doc(widget.serviceId)
+        .collection('requests')
+        .doc(user.uid)
+        .update({
+          'paymentStatus': 'paid',
+          'buyerReview': {'comment': _reviewController.text.trim()},
+          'status': 'done',
+        });
+
+    setState(() {
+      _requestData = null;
+      _selectedDate = null;
+      _reviewController.clear();
+    });
+
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Booking requested!')),
+      const SnackBar(content: Text('Payment done & review submitted!')),
     );
   }
 
   void _openChat() {
-    if (_ownerId == null) return;
+    if (_ownerId == null || _requestData == null) return;
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -145,261 +260,163 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage> {
     );
   }
 
-  Future<void> _submitRating() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    await FirebaseFirestore.instance
-        .collection('services')
-        .doc(widget.serviceId)
-        .collection('ratings')
-        .doc(user.uid)
-        .set({
-      'rating': _rating,
-      'timestamp': FieldValue.serverTimestamp(),
-      'userId': user.uid,
-      'userEmail': user.email,
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Rating submitted!')),
-    );
-  }
-
-  Future<void> _respondToPrice(bool agreed) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
-
-    await FirebaseFirestore.instance
-        .collection('services')
-        .doc(widget.serviceId)
-        .collection('requests')
-        .doc(user.uid)
-        .update({'buyerAgreed': agreed});
-
-    setState(() {
-      _buyerAgreed = agreed;
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-          content: Text(agreed ? 'You agreed to the price!' : 'You rejected')),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final serviceRef =
-        FirebaseFirestore.instance.collection('services').doc(widget.serviceId);
-
     return Scaffold(
       appBar: AppBar(title: const Text('Service Details')),
-      body: FutureBuilder<DocumentSnapshot>(
-        future: serviceRef.get(),
-        builder: (context, snap) {
-          if (snap.hasError) return Center(child: Text('Error: ${snap.error}'));
-          if (!snap.hasData)
-            return const Center(child: CircularProgressIndicator());
-          if (!snap.data!.exists)
-            return const Center(child: Text('Service not found.'));
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const Text(
+            'Service Details Here',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 20),
 
-          final data = snap.data!.data()! as Map<String, dynamic>;
-          final ownerName = data['ownerName'] ?? '';
-          _ownerId = data['ownerId'];
-
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              Text(
-                data['name'] ?? '',
-                style: const TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text('${data['category']} • ${data['location']}'),
-              const SizedBox(height: 6),
-              Text('Price Range: ${data['priceMin']} - ${data['priceMax']}'),
-              const SizedBox(height: 6),
-              Text(
-                'Owner: ${ownerName.isNotEmpty ? ownerName : data['ownerEmail']}',
-              ),
-              const SizedBox(height: 8),
-              _AverageRatingBlock(serviceId: widget.serviceId),
-              const SizedBox(height: 16),
-              const Text('Description', style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 6),
-              Text(data['description'] ?? ''),
-              const SizedBox(height: 20),
-
-              // Date picker
-              if (_requestData == null)
+          // Buyer booking
+          if (!_isSeller && _requestData == null)
+            Column(
+              children: [
                 ElevatedButton(
                   onPressed: _pickDate,
                   child: Text(
                     _selectedDate == null
-                        ? "Select Booking Date"
-                        : "Booking Date: ${_selectedDate!.toLocal()}".split(' ')[0],
+                        ? 'Select Booking Date'
+                        : "Booking Date: ${_selectedDate!.toLocal()}".split(
+                            ' ',
+                          )[0],
                   ),
                 ),
-              const SizedBox(height: 12),
-
-              // Booking / Chat / Price negotiation
-              if (_requestData == null)
+                const SizedBox(height: 12),
                 ElevatedButton(
                   onPressed: _requestBooking,
                   child: const Text('Request Booking'),
                 ),
+              ],
+            ),
 
-              if (_requestData != null)
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    ElevatedButton.icon(
-                      onPressed: _openChat,
-                      icon: const Icon(Icons.chat),
-                      label: Text(
-                        _requestData!['status'] == 'pending'
-                            ? 'Chat with Seller (Pending)'
-                            : 'Chat with Seller',
-                      ),
-                    ),
-                    const SizedBox(height: 8),
+          // Existing request
+          if (_requestData != null)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: _openChat,
+                  icon: const Icon(Icons.chat),
+                  label: const Text('Chat'),
+                ),
+                const SizedBox(height: 12),
 
-                    // Show proposed price and buyer action
-                    if (_proposedPrice != null && _buyerAgreed == null)
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Seller proposed: \$${_proposedPrice!.toStringAsFixed(2)}',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
+                // Seller propose price
+                if (_isSeller &&
+                    _requestData!['status'] == 'pending' &&
+                    _requestData!['proposedPrice'] == null)
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _priceController,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            hintText: 'Enter proposed price',
                           ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              ElevatedButton(
-                                onPressed: () => _respondToPrice(true),
-                                child: const Text('Agree'),
-                              ),
-                              const SizedBox(width: 12),
-                              ElevatedButton(
-                                onPressed: () => _respondToPrice(false),
-                                child: const Text('Reject'),
-                                style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.red),
-                              ),
-                            ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: _proposePrice,
+                        child: const Text('Send'),
+                      ),
+                    ],
+                  ),
+
+                // Buyer accept/reject
+                if (!_isSeller &&
+                    _requestData!['status'] == 'price_proposed' &&
+                    _requestData!['buyerAgreed'] == null)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Seller proposed: \$${_requestData!['proposedPrice']}',
+                      ),
+                      Row(
+                        children: [
+                          ElevatedButton(
+                            onPressed: () => _respondToPrice(true),
+                            child: const Text('Accept'),
+                          ),
+                          const SizedBox(width: 12),
+                          ElevatedButton(
+                            onPressed: () => _respondToPrice(false),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red,
+                            ),
+                            child: const Text('Reject'),
                           ),
                         ],
                       ),
+                    ],
+                  ),
 
-                    if (_buyerAgreed != null)
-                      Text(
-                        'Buyer Response: ${_buyerAgreed! ? "Agreed" : "Rejected"}',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
+                // Seller complete job
+                if (_isSeller && _requestData!['status'] == 'buyer_agreed')
+                  ElevatedButton(
+                    onPressed: _completeJob,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                    ),
+                    child: const Text('Mark Job Completed'),
+                  ),
+
+                // Buyer pay & review
+                if (!_isSeller && _requestData!['status'] == 'completed')
+                  Column(
+                    children: [
+                      ElevatedButton(
+                        onPressed: _payNow,
+                        child: const Text('Pay Now'),
                       ),
-
-                    if (_requestData!['bookingDate'] != null)
-                      Text(
-                        'Booking Date: ${(_requestData!['bookingDate'] as Timestamp).toDate().toLocal()}'
-                            .split(' ')[0],
-                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _reviewController,
+                        decoration: const InputDecoration(
+                          hintText: 'Write your review',
+                        ),
                       ),
-                  ],
-                ),
-
-              const Divider(height: 32),
-              const Text('Rate this service', style: TextStyle(fontWeight: FontWeight.bold)),
-              Slider(
-                value: _rating,
-                min: 0,
-                max: 5,
-                divisions: 5,
-                label: _rating.toStringAsFixed(1),
-                onChanged: (val) => setState(() => _rating = val),
-              ),
-              ElevatedButton(
-                onPressed: _submitRating,
-                child: const Text('Submit Rating'),
-              ),
-              const SizedBox(height: 20),
-              const Text('All Ratings', style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 8),
-              _RatingsList(serviceId: widget.serviceId),
-            ],
-          );
-        },
+                      const SizedBox(height: 8),
+                      ElevatedButton(
+                        onPressed: _submitReviewAndPayment,
+                        child: const Text('Submit Review & Done'),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+        ],
       ),
     );
   }
 }
 
-class _AverageRatingBlock extends StatelessWidget {
-  final String serviceId;
-  const _AverageRatingBlock({required this.serviceId});
+class PaymentPage extends StatelessWidget {
+  const PaymentPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final ratingsRef = FirebaseFirestore.instance
-        .collection('services')
-        .doc(serviceId)
-        .collection('ratings');
-
-    return StreamBuilder<QuerySnapshot>(
-      stream: ratingsRef.snapshots(),
-      builder: (context, snap) {
-        if (!snap.hasData) return const Text('⭐ No ratings yet');
-        final docs = snap.data!.docs;
-        if (docs.isEmpty) return const Text('⭐ No ratings yet');
-
-        double sum = 0;
-        for (final d in docs) {
-          final m = d.data() as Map<String, dynamic>;
-          sum += (m['rating'] ?? 0).toDouble();
-        }
-        final avg = sum / docs.length;
-        return Text('⭐ ${avg.toStringAsFixed(1)} (${docs.length})');
-      },
-    );
-  }
-}
-
-class _RatingsList extends StatelessWidget {
-  final String serviceId;
-  const _RatingsList({required this.serviceId});
-
-  @override
-  Widget build(BuildContext context) {
-    final ratingsRef = FirebaseFirestore.instance
-        .collection('services')
-        .doc(serviceId)
-        .collection('ratings')
-        .orderBy('timestamp', descending: true);
-
-    return StreamBuilder<QuerySnapshot>(
-      stream: ratingsRef.snapshots(),
-      builder: (context, snap) {
-        if (!snap.hasData)
-          return const Center(child: CircularProgressIndicator());
-        final docs = snap.data!.docs;
-        if (docs.isEmpty) return const Text('No ratings yet.');
-
-        return Column(
-          children: docs.map((d) {
-            final m = d.data() as Map<String, dynamic>;
-            final rating = (m['rating'] ?? 0).toDouble();
-            final email = m['userEmail'] ?? 'User';
-            return ListTile(
-              dense: true,
-              leading: const Icon(Icons.person),
-              title: Text('⭐ ${rating.toStringAsFixed(1)}'),
-              subtitle: Text(email),
-            );
-          }).toList(),
-        );
-      },
+    return Scaffold(
+      appBar: AppBar(title: const Text('Payment')),
+      body: Center(
+        child: ElevatedButton(
+          onPressed: () {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('Payment completed!')));
+            Navigator.pop(context);
+          },
+          child: const Text('Pay \$100 (Sample)'),
+        ),
+      ),
     );
   }
 }
