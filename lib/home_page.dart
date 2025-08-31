@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:nearm_services/profile_page.dart';
 import 'service_details_page.dart';
 import 'seller_dashboard_page.dart';
 import 'sell_service_page.dart';
@@ -339,6 +340,7 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
             ),
+          // Notifications icon (your existing code)
           StreamBuilder<QuerySnapshot>(
             stream: _getNotifications(),
             builder: (context, snap) {
@@ -350,7 +352,6 @@ class _HomePageState extends State<HomePage> {
                   IconButton(
                     icon: const Icon(Icons.notifications),
                     onPressed: () {
-                      // ✅ Navigate to Seller Dashboard instead of popup
                       Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -387,12 +388,25 @@ class _HomePageState extends State<HomePage> {
             icon: const Icon(Icons.location_on),
             onPressed: _chooseLocationDialog,
           ),
+
+          // ✅ Add Profile Icon
+          IconButton(
+            icon: const Icon(Icons.person),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ProfilePage()),
+              );
+            },
+          ),
+
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () => _confirmLogout(context),
           ),
         ],
       ),
+
       floatingActionButton: FloatingActionButton(
         onPressed: () => Navigator.push(
           context,
