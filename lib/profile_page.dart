@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'request_details_page.dart';
+import 'service_details_page.dart';
+import 'edit_service_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -10,10 +13,11 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _bankFormKey = GlobalKey<FormState>();
   late TabController _tabController;
+  late TabController _dashboardTabController;
 
   // Profile fields
   TextEditingController _nameController = TextEditingController();
@@ -77,6 +81,7 @@ class _ProfilePageState extends State<ProfilePage>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _dashboardTabController = TabController(length: 3, vsync: this);
     _loadUserData();
   }
 
@@ -152,17 +157,20 @@ class _ProfilePageState extends State<ProfilePage>
 
   Widget _statusChip(String status) {
     Color color;
-    switch (status) {
-      case "Pending":
+    switch (status.toLowerCase()) {
+      case "pending":
         color = Colors.orange;
         break;
-      case "Accepted":
+      case "price_proposed":
+      case "buyer_agreed":
+      case "accepted":
         color = Colors.blue;
         break;
-      case "Completed":
+      case "completed":
         color = Colors.green;
         break;
-      case "Rejected":
+      case "cancelled":
+      case "rejected":
         color = Colors.red;
         break;
       default:
@@ -192,7 +200,7 @@ class _ProfilePageState extends State<ProfilePage>
       body: TabBarView(
         controller: _tabController,
         children: [
-          // Profile Tab
+          // ===== PROFILE TAB =====
           SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -204,74 +212,277 @@ class _ProfilePageState extends State<ProfilePage>
             ),
           ),
 
-          // Dashboard Tab
-          SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  "My Bookings",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          // ===== DASHBOARD TAB WITH INTERNAL TABS =====
+          Column(
+            children: [
+              TabBar(
+                controller: _dashboardTabController,
+                labelColor: Theme.of(context).primaryColor,
+                unselectedLabelColor: Colors.grey,
+                tabs: const [
+                  Tab(text: 'My Bookings'),
+                  Tab(text: 'Bookings on My Services'),
+                  Tab(text: 'My Services'),
+                ],
+              ),
+              Expanded(
+                child: TabBarView(
+                  controller: _dashboardTabController,
+                  children: [
+                    // ===== MY BOOKINGS (Buyer) =====
+                    SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: StreamBuilder<QuerySnapshot>(
+                        stream: FirebaseFirestore.instance
+                            .collection('services')
+                            .snapshots(),
+                        builder: (context, serviceSnapshot) {
+                          if (serviceSnapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return const Center(
+                              child: CircularProgressIndicator(),
+                            );
+                          }
+                          if (!serviceSnapshot.hasData ||
+                              serviceSnapshot.data!.docs.isEmpty) {
+                            return const Text("No bookings yet.");
+                          }
+
+                          List<Widget> bookingWidgets = [];
+
+                          for (var serviceDoc in serviceSnapshot.data!.docs) {
+                            final serviceId = serviceDoc.id;
+                            final serviceName = serviceDoc['name'] ?? 'Service';
+
+                            // Requests where user is buyer
+                            final requests = serviceDoc.reference.collection(
+                              'requests',
+                            );
+
+                            bookingWidgets.add(
+                              StreamBuilder<QuerySnapshot>(
+                                stream: requests
+                                    .where('userId', isEqualTo: user?.uid)
+                                    .snapshots(),
+                                builder: (context, reqSnapshot) {
+                                  if (!reqSnapshot.hasData ||
+                                      reqSnapshot.data!.docs.isEmpty) {
+                                    return const SizedBox();
+                                  }
+
+                                  return Column(
+                                    children: reqSnapshot.data!.docs.map((
+                                      reqDoc,
+                                    ) {
+                                      final data =
+                                          reqDoc.data() as Map<String, dynamic>;
+                                      final status =
+                                          (data['status'] ?? 'pending')
+                                              .toString();
+                                      String bookingDateText =
+                                          'Booking Date N/A';
+                                      if (data['bookingDate'] != null &&
+                                          data['bookingDate'] is Timestamp) {
+                                        bookingDateText =
+                                            (data['bookingDate'] as Timestamp)
+                                                .toDate()
+                                                .toLocal()
+                                                .toString()
+                                                .split(' ')[0];
+                                      }
+                                      return Card(
+                                        margin: const EdgeInsets.symmetric(
+                                          vertical: 6,
+                                        ),
+                                        child: ListTile(
+                                          title: Text(serviceName),
+                                          subtitle: Text(bookingDateText),
+                                          trailing: _statusChip(status),
+                                          onTap: () {
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (_) =>
+                                                    RequestDetailsPage(
+                                                      bookingId: reqDoc.id,
+                                                      serviceId: serviceId,
+                                                      userId: user!.uid,
+                                                    ),
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                      );
+                                    }).toList(),
+                                  );
+                                },
+                              ),
+                            );
+                          }
+
+                          if (bookingWidgets.isEmpty) {
+                            return const Text("No bookings yet.");
+                          }
+
+                          return Column(children: bookingWidgets);
+                        },
+                      ),
+                    ),
+
+                    // ===== BOOKINGS ON MY SERVICES (Seller) =====
+                    SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: StreamBuilder<QuerySnapshot>(
+                        stream: FirebaseFirestore.instance
+                            .collection('services')
+                            .where('ownerId', isEqualTo: user?.uid)
+                            .snapshots(),
+                        builder: (context, serviceSnapshot) {
+                          if (serviceSnapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return const Center(
+                              child: CircularProgressIndicator(),
+                            );
+                          }
+                          if (!serviceSnapshot.hasData ||
+                              serviceSnapshot.data!.docs.isEmpty) {
+                            return const Text("No services posted yet.");
+                          }
+
+                          final serviceDocs = serviceSnapshot.data!.docs;
+
+                          return Column(
+                            children: serviceDocs.map((serviceDoc) {
+                              final serviceId = serviceDoc.id;
+                              final serviceName =
+                                  serviceDoc['name'] ?? 'Service';
+
+                              return StreamBuilder<QuerySnapshot>(
+                                stream: FirebaseFirestore.instance
+                                    .collection('services')
+                                    .doc(serviceId)
+                                    .collection('requests')
+                                    .snapshots(),
+                                builder: (context, requestSnapshot) {
+                                  if (requestSnapshot.connectionState ==
+                                      ConnectionState.waiting) {
+                                    return const SizedBox();
+                                  }
+                                  if (!requestSnapshot.hasData ||
+                                      requestSnapshot.data!.docs.isEmpty) {
+                                    return Card(
+                                      margin: const EdgeInsets.symmetric(
+                                        vertical: 6,
+                                      ),
+                                      child: ListTile(
+                                        title: Text(serviceName),
+                                        subtitle: const Text(
+                                          "No bookings on this service yet",
+                                        ),
+                                      ),
+                                    );
+                                  }
+
+                                  return Column(
+                                    children: requestSnapshot.data!.docs.map((
+                                      reqDoc,
+                                    ) {
+                                      final data =
+                                          reqDoc.data() as Map<String, dynamic>;
+                                      final status =
+                                          (data['status'] ?? 'pending')
+                                              .toString();
+                                      return Card(
+                                        margin: const EdgeInsets.symmetric(
+                                          vertical: 6,
+                                        ),
+                                        child: ListTile(
+                                          title: Text(
+                                            data['userName'] ?? 'Booking',
+                                          ),
+                                          subtitle: Text(
+                                            "$serviceName | ${data['bookingDate'] != null ? (data['bookingDate'] as Timestamp).toDate().toLocal().toString().split(' ')[0] : 'Booking Date N/A'}",
+                                          ),
+                                          trailing: _statusChip(status),
+                                          onTap: () {
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (_) =>
+                                                    RequestDetailsPage(
+                                                      bookingId: reqDoc.id,
+                                                      serviceId: serviceId,
+                                                      userId:
+                                                          data['userId'] ?? '',
+                                                    ),
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                      );
+                                    }).toList(),
+                                  );
+                                },
+                              );
+                            }).toList(),
+                          );
+                        },
+                      ),
+                    ),
+
+                    // ===== MY SERVICES =====
+                    SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: StreamBuilder<QuerySnapshot>(
+                        stream: FirebaseFirestore.instance
+                            .collection('services')
+                            .where('ownerId', isEqualTo: user?.uid)
+                            .snapshots(),
+                        builder: (context, snapshot) {
+                          if (!snapshot.hasData) {
+                            return const Center(
+                              child: CircularProgressIndicator(),
+                            );
+                          }
+                          final docs = snapshot.data!.docs;
+                          if (docs.isEmpty)
+                            return const Text("No services posted.");
+
+                          return Column(
+                            children: docs.map((doc) {
+                              final data = doc.data() as Map<String, dynamic>;
+                              return ListTile(
+                                title: Text(data['name'] ?? 'Service'),
+                                subtitle: Text(data['category'] ?? ''),
+                                trailing: _statusChip(
+                                  data['status'] ?? 'Pending',
+                                ),
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          EditServicePage(serviceId: doc.id),
+                                    ),
+                                  );
+                                },
+                              );
+                            }).toList(),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 8),
-                StreamBuilder<QuerySnapshot>(
-                  stream: FirebaseFirestore.instance
-                      .collection('bookings')
-                      .where('buyerId', isEqualTo: user?.uid)
-                      .snapshots(),
-                  builder: (context, snapshot) {
-                    if (!snapshot.hasData) {
-                      return const CircularProgressIndicator();
-                    }
-                    final docs = snapshot.data!.docs;
-                    if (docs.isEmpty) return const Text("No bookings yet.");
-                    return Column(
-                      children: docs.map((doc) {
-                        final data = doc.data() as Map<String, dynamic>;
-                        return ListTile(
-                          title: Text(data['serviceTitle'] ?? 'Service'),
-                          subtitle: _statusChip(data['status'] ?? 'Pending'),
-                        );
-                      }).toList(),
-                    );
-                  },
-                ),
-                const SizedBox(height: 20),
-                const Text(
-                  "My Services",
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                StreamBuilder<QuerySnapshot>(
-                  stream: FirebaseFirestore.instance
-                      .collection('services')
-                      .where('sellerId', isEqualTo: user?.uid)
-                      .snapshots(),
-                  builder: (context, snapshot) {
-                    if (!snapshot.hasData)
-                      return const CircularProgressIndicator();
-                    final docs = snapshot.data!.docs;
-                    if (docs.isEmpty) return const Text("No services posted.");
-                    return Column(
-                      children: docs.map((doc) {
-                        final data = doc.data() as Map<String, dynamic>;
-                        return ListTile(
-                          title: Text(data['title'] ?? 'Service'),
-                          subtitle: _statusChip(data['status'] ?? 'Pending'),
-                        );
-                      }).toList(),
-                    );
-                  },
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
+  // ===== PROFILE CARD =====
   Widget _buildProfileCard() {
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -332,6 +543,7 @@ class _ProfilePageState extends State<ProfilePage>
     );
   }
 
+  // ===== BANK CARD =====
   Widget _buildBankCard() {
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
