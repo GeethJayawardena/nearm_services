@@ -18,6 +18,8 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
   bool _isSeller = false;
   String? _ownerId;
   DateTime? _selectedDate;
+  Map<String, dynamic>? _serviceData;
+  List<Map<String, dynamic>> _reviews = [];
   final TextEditingController _reviewController = TextEditingController();
   final TextEditingController _priceController = TextEditingController();
 
@@ -53,6 +55,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
         .get();
     if (!serviceDoc.exists) return;
 
+    _serviceData = serviceDoc.data();
     _ownerId = serviceDoc['ownerId'];
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
@@ -69,9 +72,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
             .get();
 
         if (requestsSnap.docs.isNotEmpty) {
-          // Pick the first request as example
-          activeRequest =
-              requestsSnap.docs.first.data()! as Map<String, dynamic>;
+          activeRequest = requestsSnap.docs.first.data();
         }
       } else {
         // Buyer sees only their request
@@ -84,17 +85,31 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
 
         if (doc.exists) {
           final status = doc['status'] ?? 'pending';
-          // Only keep active requests (not done or cancelled)
           if (status != 'done' && status != 'cancelled') {
-            activeRequest = doc.data()! as Map<String, dynamic>;
+            activeRequest = doc.data();
           }
         }
       }
 
-      setState(() {
-        _requestData = activeRequest; // null if no active request
+      // Load previous reviews
+      final reviewsSnap = await FirebaseFirestore.instance
+          .collection('services')
+          .doc(widget.serviceId)
+          .collection('requests')
+          .where('buyerReview', isNotEqualTo: null)
+          .get();
 
-        // Set _selectedDate only if user hasn’t picked a date yet
+      _reviews = reviewsSnap.docs
+          .map(
+            (d) => {
+              'comment': d['buyerReview']['comment'] ?? '',
+              'rating': d['buyerReview']['rating'] ?? 0,
+            },
+          )
+          .toList();
+
+      setState(() {
+        _requestData = activeRequest;
         if (_selectedDate == null &&
             _requestData != null &&
             _requestData!['bookingDate'] != null) {
@@ -249,7 +264,10 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
         .doc(user.uid)
         .update({
           'paymentStatus': 'paid',
-          'buyerReview': {'comment': _reviewController.text.trim()},
+          'buyerReview': {
+            'comment': _reviewController.text.trim(),
+            'rating': 5, // You can add rating input
+          },
           'status': 'done',
         });
 
@@ -257,6 +275,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
       _requestData = null;
       _selectedDate = null;
       _reviewController.clear();
+      _loadServiceData(); // reload reviews
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -282,13 +301,21 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const Text(
-            'Service Details Here',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          // Service title & details
+          Text(
+            _serviceData?['name'] ?? 'Service Name',
+            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Text(_serviceData?['description'] ?? 'Service Description'),
+          const SizedBox(height: 8),
+          Text(
+            "Price: ${_serviceData?['priceMin'] ?? '-'} - ${_serviceData?['priceMax'] ?? '-'}",
+            style: const TextStyle(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 20),
 
-          // Buyer booking
+          // Booking / request actions
           if (!_isSeller && _requestData == null)
             Column(
               children: [
@@ -310,7 +337,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
               ],
             ),
 
-          // Existing request
+          // Existing request actions
           if (_requestData != null)
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -321,8 +348,6 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                   label: const Text('Chat'),
                 ),
                 const SizedBox(height: 12),
-
-                // Seller propose price
                 if (_isSeller &&
                     _requestData!['status'] == 'pending' &&
                     _requestData!['proposedPrice'] == null)
@@ -344,8 +369,6 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                       ),
                     ],
                   ),
-
-                // Buyer accept/reject
                 if (!_isSeller &&
                     _requestData!['status'] == 'price_proposed' &&
                     _requestData!['buyerAgreed'] == null)
@@ -373,8 +396,6 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                       ),
                     ],
                   ),
-
-                // Seller complete job
                 if (_isSeller && _requestData!['status'] == 'buyer_agreed')
                   ElevatedButton(
                     onPressed: _completeJob,
@@ -383,8 +404,6 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                     ),
                     child: const Text('Mark Job Completed'),
                   ),
-
-                // Buyer pay & review
                 if (!_isSeller && _requestData!['status'] == 'completed')
                   Column(
                     children: [
@@ -408,6 +427,38 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                   ),
               ],
             ),
+
+          // Previous reviews at the bottom
+          if (_reviews.isNotEmpty) ...[
+            const SizedBox(height: 32),
+            const Text(
+              'Previous Reviews',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            Column(
+              children: _reviews.map((r) {
+                final comment = r['comment'] ?? '';
+                final rating = r['rating'] ?? 0;
+                return Card(
+                  margin: const EdgeInsets.symmetric(vertical: 6),
+                  child: ListTile(
+                    title: Text(comment),
+                    subtitle: Row(
+                      children: List.generate(
+                        5,
+                        (index) => Icon(
+                          index < rating ? Icons.star : Icons.star_border,
+                          color: Colors.amber,
+                          size: 16,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
         ],
       ),
     );
