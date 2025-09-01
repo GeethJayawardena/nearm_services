@@ -1,22 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 class LoginChoicePage extends StatelessWidget {
   const LoginChoicePage({super.key});
-
-  Future<void> _continueAsGuest(BuildContext context) async {
-    try {
-      final userCredential = await FirebaseAuth.instance.signInAnonymously();
-      debugPrint("✅ Signed in as guest: ${userCredential.user?.uid}");
-      Navigator.pushReplacementNamed(context, '/home');
-    } catch (e, stack) {
-      debugPrint("❌ Guest sign-in error: $e");
-      debugPrint(stack.toString());
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to sign in as guest: $e')));
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -59,28 +44,7 @@ class LoginChoicePage extends StatelessWidget {
                     Navigator.pushNamed(context, '/login-email');
                   },
                   label: const Text(
-                    'Login with Email',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Continue as Guest Button
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.person_outline),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    side: BorderSide(color: theme.primaryColor, width: 1.5),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  onPressed: () => _continueAsGuest(context),
-                  label: const Text(
-                    'Continue as Guest',
+                    'Login',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                   ),
                 ),

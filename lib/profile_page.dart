@@ -451,21 +451,33 @@ class _ProfilePageState extends State<ProfilePage>
                           return Column(
                             children: docs.map((doc) {
                               final data = doc.data() as Map<String, dynamic>;
-                              return ListTile(
-                                title: Text(data['name'] ?? 'Service'),
-                                subtitle: Text(data['category'] ?? ''),
-                                trailing: _statusChip(
-                                  data['status'] ?? 'Pending',
-                                ),
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) =>
-                                          EditServicePage(serviceId: doc.id),
+                              return Card(
+                                margin: const EdgeInsets.symmetric(vertical: 6),
+                                child: ListTile(
+                                  title: Text(
+                                    data['name'] ?? 'Service',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
                                     ),
-                                  );
-                                },
+                                  ),
+                                  subtitle: Text(data['category'] ?? ''),
+                                  trailing: const Icon(
+                                    Icons.edit,
+                                    color: Colors.blueAccent,
+                                  ),
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => EditServicePage(
+                                          serviceId: doc.id,
+                                          serviceData:
+                                              data, // ✅ pass the data too
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
                               );
                             }).toList(),
                           );

@@ -3,7 +3,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 class EditServicePage extends StatefulWidget {
   final String serviceId;
-  const EditServicePage({super.key, required this.serviceId});
+  final Map<String, dynamic> serviceData;
+
+  const EditServicePage({
+    super.key,
+    required this.serviceId,
+    required this.serviceData,
+  });
 
   @override
   State<EditServicePage> createState() => _EditServicePageState();
@@ -12,177 +18,242 @@ class EditServicePage extends StatefulWidget {
 class _EditServicePageState extends State<EditServicePage> {
   final _formKey = GlobalKey<FormState>();
 
-  TextEditingController _nameController = TextEditingController();
-  TextEditingController _descController = TextEditingController();
-  TextEditingController _priceMinController = TextEditingController();
-  TextEditingController _priceMaxController = TextEditingController();
-  TextEditingController _locationController = TextEditingController();
-  String? _category;
+  late TextEditingController _nameController;
+  late TextEditingController _descriptionController;
+  late TextEditingController _locationController;
+  late TextEditingController _priceMinController;
+  late TextEditingController _priceMaxController;
 
   final List<String> _categories = [
-    'Cleaning',
-    'Plumbing',
-    'Electrical',
-    'Delivery',
-    'Other',
+    "Plumbing",
+    "Cleaning",
+    "Tutoring",
+    "Mechanic (Bike/Car)",
+    "Electrical",
+    "Other",
   ];
 
-  bool _loading = true;
+  late String? _category;
+  bool _isSaving = false;
 
   @override
   void initState() {
     super.initState();
-    _loadService();
-  }
+    _nameController = TextEditingController(
+      text: widget.serviceData["name"] ?? "",
+    );
+    _descriptionController = TextEditingController(
+      text: widget.serviceData["description"] ?? "",
+    );
+    _locationController = TextEditingController(
+      text: widget.serviceData["location"] ?? "",
+    );
+    _priceMinController = TextEditingController(
+      text: widget.serviceData["priceMin"]?.toString() ?? "",
+    );
+    _priceMaxController = TextEditingController(
+      text: widget.serviceData["priceMax"]?.toString() ?? "",
+    );
 
-  Future<void> _loadService() async {
-    final doc = await FirebaseFirestore.instance
-        .collection('services')
-        .doc(widget.serviceId)
-        .get();
-
-    if (doc.exists) {
-      final data = doc.data()!;
-      setState(() {
-        _nameController.text = data['name'] ?? '';
-        _descController.text = data['description'] ?? '';
-        _priceMinController.text = data['priceMin']?.toString() ?? '';
-        _priceMaxController.text = data['priceMax']?.toString() ?? '';
-        _locationController.text = data['location'] ?? '';
-        _category = data['category'];
-        _loading = false;
-      });
-    }
+    _category = _categories.contains(widget.serviceData["category"])
+        ? widget.serviceData["category"]
+        : null;
   }
 
   Future<void> _saveService() async {
     if (!_formKey.currentState!.validate()) return;
 
-    await FirebaseFirestore.instance
-        .collection('services')
-        .doc(widget.serviceId)
-        .set({
-          'name': _nameController.text.trim(),
-          'description': _descController.text.trim(),
-          'priceMin': double.tryParse(_priceMinController.text.trim()) ?? 0,
-          'priceMax': double.tryParse(_priceMaxController.text.trim()) ?? 0,
-          'location': _locationController.text.trim(),
-          'category': _category,
-        }, SetOptions(merge: true));
+    setState(() => _isSaving = true);
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Service updated')));
-    Navigator.pop(context);
+    try {
+      await FirebaseFirestore.instance
+          .collection("services")
+          .doc(widget.serviceId)
+          .update({
+            "name": _nameController.text.trim(),
+            "description": _descriptionController.text.trim(),
+            "location": _locationController.text.trim(),
+            "priceMin": int.tryParse(_priceMinController.text.trim()) ?? 0,
+            "priceMax": int.tryParse(_priceMaxController.text.trim()) ?? 0,
+            "category": _category ?? "Other",
+            "timestamp": FieldValue.serverTimestamp(),
+          });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Service updated successfully")),
+        );
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Error: $e")));
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
   Future<void> _deleteService() async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete Service'),
-        content: const Text(
-          'Are you sure you want to delete this service? This action cannot be undone.',
-        ),
+      builder: (context) => AlertDialog(
+        title: const Text("Delete Service"),
+        content: const Text("Are you sure you want to delete this service?"),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancel"),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text("Delete"),
           ),
         ],
       ),
     );
 
-    if (confirm == true) {
+    if (confirm != true) return;
+
+    setState(() => _isSaving = true);
+
+    try {
       await FirebaseFirestore.instance
-          .collection('services')
+          .collection("services")
           .doc(widget.serviceId)
           .delete();
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Service deleted')));
-      Navigator.pop(context);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Service deleted successfully")),
+        );
+        Navigator.pop(context); // go back after deletion
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Error: $e")));
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-
-    // Add Firestore category to dropdown if it's not already in the list
-    final categoriesWithCustom = Set<String>.from(_categories);
-    if (_category != null) categoriesWithCustom.add(_category!);
-
     return Scaffold(
-      appBar: AppBar(title: const Text('Edit Service')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            children: [
-              TextFormField(
-                controller: _nameController,
-                decoration: const InputDecoration(labelText: 'Service Name'),
-                validator: (val) =>
-                    val == null || val.isEmpty ? 'Enter name' : null,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _descController,
-                decoration: const InputDecoration(labelText: 'Description'),
-                maxLines: 3,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _priceMinController,
-                decoration: const InputDecoration(labelText: 'Min Price'),
-                keyboardType: TextInputType.number,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _priceMaxController,
-                decoration: const InputDecoration(labelText: 'Max Price'),
-                keyboardType: TextInputType.number,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _locationController,
-                decoration: const InputDecoration(labelText: 'Location'),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                value: categoriesWithCustom.contains(_category)
-                    ? _category
-                    : null,
-                decoration: const InputDecoration(labelText: 'Category'),
-                items: categoriesWithCustom
-                    .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                    .toList(),
-                onChanged: (val) => setState(() => _category = val),
-              ),
-              const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: _saveService,
-                child: const Text('Save Changes'),
-              ),
-              const SizedBox(height: 12),
-              ElevatedButton(
-                onPressed: _deleteService,
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                child: const Text('Delete Service'),
-              ),
-            ],
+      appBar: AppBar(
+        title: const Text("Service"),
+        centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.delete, color: Colors.red),
+            onPressed: _deleteService,
+            tooltip: "Delete Service",
           ),
-        ),
+        ],
       ),
+      body: _isSaving
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  children: [
+                    DropdownButtonFormField<String>(
+                      value: _category,
+                      items: _categories.map((String category) {
+                        return DropdownMenuItem<String>(
+                          value: category,
+                          child: Text(category),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        setState(() => _category = value);
+                      },
+                      decoration: const InputDecoration(
+                        labelText: "Category",
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    TextFormField(
+                      controller: _nameController,
+                      decoration: const InputDecoration(
+                        labelText: "Service Name",
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) =>
+                          value!.isEmpty ? "Please enter a name" : null,
+                    ),
+                    const SizedBox(height: 16),
+
+                    TextFormField(
+                      controller: _descriptionController,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: "Description",
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    TextFormField(
+                      controller: _locationController,
+                      decoration: const InputDecoration(
+                        labelText: "Location",
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    TextFormField(
+                      controller: _priceMinController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: "Minimum Price",
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    TextFormField(
+                      controller: _priceMaxController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: "Maximum Price",
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text("Cancel"),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: _saveService,
+                            child: const Text("Save"),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
     );
   }
 }

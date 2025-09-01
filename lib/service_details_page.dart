@@ -18,7 +18,6 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
   bool _isSeller = false;
   String? _ownerId;
   DateTime? _selectedDate;
-  double _rating = 0;
   final TextEditingController _reviewController = TextEditingController();
   final TextEditingController _priceController = TextEditingController();
 
@@ -58,41 +57,52 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       _isSeller = user.uid == _ownerId;
-      DocumentSnapshot? requestDoc;
+
+      Map<String, dynamic>? activeRequest;
 
       if (_isSeller) {
-        final requests = await FirebaseFirestore.instance
+        // Seller sees all requests
+        final requestsSnap = await FirebaseFirestore.instance
             .collection('services')
             .doc(widget.serviceId)
             .collection('requests')
             .get();
-        if (requests.docs.isNotEmpty) requestDoc = requests.docs.first;
+
+        if (requestsSnap.docs.isNotEmpty) {
+          // Pick the first request as example
+          activeRequest =
+              requestsSnap.docs.first.data()! as Map<String, dynamic>;
+        }
       } else {
-        requestDoc = await FirebaseFirestore.instance
+        // Buyer sees only their request
+        final doc = await FirebaseFirestore.instance
             .collection('services')
             .doc(widget.serviceId)
             .collection('requests')
             .doc(user.uid)
             .get();
+
+        if (doc.exists) {
+          final status = doc['status'] ?? 'pending';
+          // Only keep active requests (not done or cancelled)
+          if (status != 'done' && status != 'cancelled') {
+            activeRequest = doc.data()! as Map<String, dynamic>;
+          }
+        }
       }
 
       setState(() {
-        if (requestDoc != null && requestDoc.exists) {
-          _requestData = requestDoc.data()! as Map<String, dynamic>;
-          if (_selectedDate == null && _requestData!['bookingDate'] != null) {
-            final bd = _requestData!['bookingDate'];
-            if (bd is Timestamp)
-              _selectedDate = bd.toDate();
-            else if (bd is DateTime)
-              _selectedDate = bd;
-          }
-          if (_requestData!['buyerReview'] != null &&
-              _requestData!['buyerReview']['rating'] != null) {
-            _rating = (_requestData!['buyerReview']['rating'] as num)
-                .toDouble();
-          }
-        } else {
-          _requestData = null;
+        _requestData = activeRequest; // null if no active request
+
+        // Set _selectedDate only if user hasn’t picked a date yet
+        if (_selectedDate == null &&
+            _requestData != null &&
+            _requestData!['bookingDate'] != null) {
+          final bd = _requestData!['bookingDate'];
+          if (bd is Timestamp)
+            _selectedDate = bd.toDate();
+          else if (bd is DateTime)
+            _selectedDate = bd;
         }
       });
     }
@@ -119,23 +129,24 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
       return;
     }
 
-    await FirebaseFirestore.instance
+    final requestRef = FirebaseFirestore.instance
         .collection('services')
         .doc(widget.serviceId)
         .collection('requests')
-        .doc(user.uid)
-        .set({
-          'userId': user.uid,
-          'userEmail': user.email,
-          'userName': user.displayName ?? user.email,
-          'status': 'pending',
-          'timestamp': FieldValue.serverTimestamp(),
-          'bookingDate': Timestamp.fromDate(_selectedDate!),
-          'buyerAgreed': null,
-          'proposedPrice': null,
-          'paymentStatus': null,
-          'buyerReview': null,
-        });
+        .doc(); // auto-ID
+
+    await requestRef.set({
+      'userId': user.uid,
+      'userEmail': user.email,
+      'userName': user.displayName ?? user.email,
+      'status': 'pending',
+      'timestamp': FieldValue.serverTimestamp(),
+      'bookingDate': Timestamp.fromDate(_selectedDate!),
+      'buyerAgreed': null,
+      'proposedPrice': null,
+      'paymentStatus': null,
+      'buyerReview': null,
+    });
 
     setState(() {
       _requestData = {
@@ -145,8 +156,6 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
         'bookingDate': Timestamp.fromDate(_selectedDate!),
         'buyerAgreed': null,
         'proposedPrice': null,
-        'paymentStatus': null,
-        'buyerReview': null,
       };
     });
 
@@ -233,8 +242,6 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
   Future<void> _submitReviewAndPayment() async {
     if (_requestData == null) return;
     final user = FirebaseAuth.instance.currentUser!;
-
-    // 1. Update request document
     await FirebaseFirestore.instance
         .collection('services')
         .doc(widget.serviceId)
@@ -242,37 +249,14 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
         .doc(user.uid)
         .update({
           'paymentStatus': 'paid',
-          'buyerReview': {
-            'comment': _reviewController.text.trim(),
-            'rating': _rating,
-          },
+          'buyerReview': {'comment': _reviewController.text.trim()},
           'status': 'done',
         });
 
-    // 2. Add to purchases collection
-    final serviceDoc = await FirebaseFirestore.instance
-        .collection('services')
-        .doc(widget.serviceId)
-        .get();
-
-    if (serviceDoc.exists) {
-      final serviceData = serviceDoc.data()!;
-      await FirebaseFirestore.instance.collection('purchases').add({
-        'buyerId': user.uid,
-        'buyerName': user.displayName ?? user.email,
-        'sellerId': serviceData['ownerId'],
-        'sellerName': serviceData['ownerName'] ?? 'Unknown',
-        'serviceName': serviceData['name'] ?? 'Unknown Service',
-        'timestamp': FieldValue.serverTimestamp(),
-      });
-    }
-
-    // 3. Clear local state
     setState(() {
       _requestData = null;
       _selectedDate = null;
       _reviewController.clear();
-      _rating = 0;
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -416,21 +400,6 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          const Text('Rating:'),
-                          Expanded(
-                            child: Slider(
-                              value: _rating,
-                              min: 0,
-                              max: 5,
-                              divisions: 5,
-                              label: _rating.toString(),
-                              onChanged: (val) => setState(() => _rating = val),
-                            ),
-                          ),
-                        ],
-                      ),
                       ElevatedButton(
                         onPressed: _submitReviewAndPayment,
                         child: const Text('Submit Review & Done'),
