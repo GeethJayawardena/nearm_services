@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'request_details_page.dart';
 import 'service_details_page.dart';
 import 'edit_service_page.dart';
+import 'login_choice_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -155,6 +156,122 @@ class _ProfilePageState extends State<ProfilePage>
     ).showSnackBar(const SnackBar(content: Text('Bank details saved')));
   }
 
+  // ===== LOGOUT WITH CONFIRMATION =====
+  Future<void> _logout() async {
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm Logout'),
+        content: const Text('Are you sure you want to logout?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false), // Cancel
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true), // Confirm
+            child: const Text('Logout'),
+          ),
+        ],
+      ),
+    );
+
+    // If user cancels, do nothing
+    if (confirmed != true) return;
+
+    // Sign out from Firebase
+    await FirebaseAuth.instance.signOut();
+
+    // Navigate to login page and remove all previous routes
+    Navigator.of(context).pushNamedAndRemoveUntil(
+      '/login', // make sure this is your login route
+      (route) => false,
+    );
+  }
+
+  // ===== DELETE ACCOUNT WITH SAFE LOGOUT =====
+  Future<void> _deleteAccount() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    // Confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text("Confirm Account Deletion"),
+        content: const Text(
+          "All your services, requests, and profile data will be permanently deleted. This cannot be undone.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("Delete"),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final firestore = FirebaseFirestore.instance;
+
+    try {
+      // Delete user's profile
+      await firestore.collection('users').doc(user.uid).delete();
+
+      // Delete all services created by user along with their requests
+      final servicesSnap = await firestore
+          .collection('services')
+          .where('ownerId', isEqualTo: user.uid)
+          .get();
+
+      for (var serviceDoc in servicesSnap.docs) {
+        final requestsSnap = await serviceDoc.reference
+            .collection('requests')
+            .get();
+        for (var reqDoc in requestsSnap.docs) {
+          await reqDoc.reference.delete();
+        }
+        await serviceDoc.reference.delete();
+      }
+
+      // Delete requests where user is buyer
+      final allServicesSnap = await firestore.collection('services').get();
+      for (var serviceDoc in allServicesSnap.docs) {
+        final buyerRequestsSnap = await serviceDoc.reference
+            .collection('requests')
+            .where('userId', isEqualTo: user.uid)
+            .get();
+        for (var reqDoc in buyerRequestsSnap.docs) {
+          await reqDoc.reference.delete();
+        }
+      }
+
+      // Delete Firebase Auth user
+      await user.delete();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Account deleted successfully')),
+      );
+
+      // Redirect to login page and remove all previous routes
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        '/login', // make sure this is your login route
+        (route) => false,
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error deleting account: $e')));
+    }
+  }
+
   Widget _statusChip(String status) {
     Color color;
     switch (status.toLowerCase()) {
@@ -189,6 +306,19 @@ class _ProfilePageState extends State<ProfilePage>
     return Scaffold(
       appBar: AppBar(
         title: const Text('Profile'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: _logout, // <-- call the updated function
+            tooltip: 'Logout',
+          ),
+
+          IconButton(
+            icon: const Icon(Icons.delete_forever),
+            onPressed: _deleteAccount,
+            tooltip: 'Delete Account',
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
@@ -471,8 +601,7 @@ class _ProfilePageState extends State<ProfilePage>
                                       MaterialPageRoute(
                                         builder: (_) => EditServicePage(
                                           serviceId: doc.id,
-                                          serviceData:
-                                              data, // ✅ pass the data too
+                                          serviceData: data,
                                         ),
                                       ),
                                     );

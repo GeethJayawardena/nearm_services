@@ -74,6 +74,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
           'status': 'price_proposed',
           'buyerAgreed': null,
         });
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Price \$${price.toString()} sent to buyer')),
     );
@@ -140,30 +141,47 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
     _loadData();
   }
 
-  Future<void> _submitPayment() async {
-    await FirebaseFirestore.instance
-        .collection('services')
-        .doc(widget.serviceId)
-        .collection('requests')
-        .doc(widget.bookingId)
-        .update({'paymentStatus': 'paid'});
-    _loadData();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Payment done! Please submit review.')),
-    );
+  void _goToBankPayment() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BankDetailsPage(
+          serviceId: widget.serviceId,
+          bookingId: widget.bookingId,
+        ),
+      ),
+    ).then((paid) {
+      if (paid == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Payment done! Please submit review.')),
+        );
+        _loadData();
+      }
+    });
   }
 
   Future<void> _submitReview() async {
+    if (reviewController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please write a review before submitting'),
+        ),
+      );
+      return;
+    }
+
     await FirebaseFirestore.instance
         .collection('services')
         .doc(widget.serviceId)
         .collection('requests')
         .doc(widget.bookingId)
         .update({
-          'review': {'comment': reviewController.text, 'rating': rating},
+          'review': {'comment': reviewController.text.trim(), 'rating': rating},
           'status': 'done',
         });
     _loadData();
+    reviewController.clear();
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Review submitted! Booking finished.')),
     );
@@ -194,7 +212,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
               Text('Proposed Price: \$${proposedPrice.toString()}'),
             const SizedBox(height: 16),
 
-            // Seller: propose price if status is pending
+            // Seller: propose price
             if (isSeller && status == 'pending')
               ElevatedButton(
                 onPressed: _showPriceDialog,
@@ -226,7 +244,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
                 ],
               ),
 
-            // Buyer: show cancelled message
+            // Buyer: cancelled
             if (!isSeller && status == 'cancelled')
               const Text(
                 'Booking cancelled',
@@ -244,10 +262,10 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
                 child: const Text('Mark Job Completed'),
               ),
 
-            // Buyer: pay after job completed and not paid
+            // Buyer: pay after job completed
             if (!isSeller && status == 'completed' && paymentStatus != 'paid')
               ElevatedButton(
-                onPressed: _submitPayment,
+                onPressed: _goToBankPayment,
                 child: const Text('Pay Now'),
               ),
 
@@ -303,6 +321,41 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// --- BankDetailsPage ---
+class BankDetailsPage extends StatelessWidget {
+  final String serviceId;
+  final String bookingId;
+  const BankDetailsPage({
+    super.key,
+    required this.serviceId,
+    required this.bookingId,
+  });
+
+  Future<void> _completePayment(BuildContext context) async {
+    await FirebaseFirestore.instance
+        .collection('services')
+        .doc(serviceId)
+        .collection('requests')
+        .doc(bookingId)
+        .update({'paymentStatus': 'paid'});
+
+    Navigator.pop(context, true); // return true to indicate payment done
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Bank Details')),
+      body: Center(
+        child: ElevatedButton(
+          onPressed: () => _completePayment(context),
+          child: const Text('Pay \$100 (Sample Payment)'),
         ),
       ),
     );

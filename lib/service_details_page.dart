@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'chat_page.dart';
-import 'main.dart'; // routeObserver
+import 'main.dart';
+import 'bank_details_page.dart';
 
 class ServiceDetailsPage extends StatefulWidget {
   final String serviceId;
@@ -20,7 +21,6 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
   DateTime? _selectedDate;
   Map<String, dynamic>? _serviceData;
   List<Map<String, dynamic>> _reviews = [];
-  final TextEditingController _reviewController = TextEditingController();
   final TextEditingController _priceController = TextEditingController();
 
   @override
@@ -38,7 +38,6 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
   @override
   void dispose() {
     routeObserver.unsubscribe(this);
-    _reviewController.dispose();
     _priceController.dispose();
     super.dispose();
   }
@@ -250,36 +249,9 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
   void _payNow() {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const PaymentPage()),
-    );
-  }
-
-  Future<void> _submitReviewAndPayment() async {
-    if (_requestData == null) return;
-    final user = FirebaseAuth.instance.currentUser!;
-    await FirebaseFirestore.instance
-        .collection('services')
-        .doc(widget.serviceId)
-        .collection('requests')
-        .doc(user.uid)
-        .update({
-          'paymentStatus': 'paid',
-          'buyerReview': {
-            'comment': _reviewController.text.trim(),
-            'rating': 5, // You can add rating input
-          },
-          'status': 'done',
-        });
-
-    setState(() {
-      _requestData = null;
-      _selectedDate = null;
-      _reviewController.clear();
-      _loadServiceData(); // reload reviews
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Payment done & review submitted!')),
+      MaterialPageRoute(
+        builder: (_) => BankDetailsPage(serviceId: widget.serviceId),
+      ),
     );
   }
 
@@ -301,7 +273,6 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Service title & details
           Text(
             _serviceData?['name'] ?? 'Service Name',
             style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
@@ -404,26 +375,11 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                     ),
                     child: const Text('Mark Job Completed'),
                   ),
+                // Buyer after job completed
                 if (!_isSeller && _requestData!['status'] == 'completed')
-                  Column(
-                    children: [
-                      ElevatedButton(
-                        onPressed: _payNow,
-                        child: const Text('Pay Now'),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: _reviewController,
-                        decoration: const InputDecoration(
-                          hintText: 'Write your review',
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      ElevatedButton(
-                        onPressed: _submitReviewAndPayment,
-                        child: const Text('Submit Review & Done'),
-                      ),
-                    ],
+                  ElevatedButton(
+                    onPressed: _payNow,
+                    child: const Text('Pay Now'),
                   ),
               ],
             ),
@@ -460,28 +416,6 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
             ),
           ],
         ],
-      ),
-    );
-  }
-}
-
-class PaymentPage extends StatelessWidget {
-  const PaymentPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Payment')),
-      body: Center(
-        child: ElevatedButton(
-          onPressed: () {
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(const SnackBar(content: Text('Payment completed!')));
-            Navigator.pop(context);
-          },
-          child: const Text('Pay \$100 (Sample)'),
-        ),
       ),
     );
   }
