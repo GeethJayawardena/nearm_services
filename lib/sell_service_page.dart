@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:geocoding/geocoding.dart';
-import 'location_selector.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 
 class SellServicePage extends StatefulWidget {
   const SellServicePage({super.key});
@@ -15,7 +15,6 @@ class SellServicePage extends StatefulWidget {
 class _SellServicePageState extends State<SellServicePage> {
   final _formKey = GlobalKey<FormState>();
 
-  // Category list
   final List<String> _categories = [
     'Electrician',
     'Plumber',
@@ -33,17 +32,26 @@ class _SellServicePageState extends State<SellServicePage> {
     'Delivery Helper',
     'Elderly Caregiver',
   ];
-  String? _category; // Selected category
-
+  String? _category;
   String _serviceName = '';
   String _description = '';
-  String _location = '';
   bool _loadingLocation = false;
 
-  // Price Range
   double _priceMinValue = 0;
   double _priceMaxValue = 1000;
 
+  String? _district;
+  double? _latitude;
+  double? _longitude;
+
+  final MapController _mapController = MapController();
+  double _mapZoom = 15.0;
+
+  // Default to Sri Lanka center
+  final double defaultLat = 7.8731;
+  final double defaultLng = 80.7718;
+
+  // Detect GPS coordinates
   Future<void> _detectLocation() async {
     setState(() => _loadingLocation = true);
     try {
@@ -65,38 +73,44 @@ class _SellServicePageState extends State<SellServicePage> {
         desiredAccuracy: LocationAccuracy.high,
       );
 
-      List<Placemark> placemarks = await placemarkFromCoordinates(
-        pos.latitude,
-        pos.longitude,
+      setState(() {
+        _latitude = pos.latitude;
+        _longitude = pos.longitude;
+      });
+
+      // Move map to captured location
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _mapController.move(LatLng(_latitude!, _longitude!), _mapZoom);
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Live location captured successfully!')),
       );
-
-      if (placemarks.isNotEmpty) {
-        String? district =
-            placemarks[0].subAdministrativeArea ??
-            placemarks[0].administrativeArea ??
-            placemarks[0].locality;
-
-        if (district != null && district.isNotEmpty) {
-          setState(() => _location = district);
-        }
-      }
     } catch (e) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Failed to detect location: $e')));
+      ).showSnackBar(SnackBar(content: Text('Failed to get location: $e')));
     } finally {
       setState(() => _loadingLocation = false);
     }
   }
 
+  // Save service to Firestore
   Future<void> _saveService() async {
     if (!_formKey.currentState!.validate()) return;
     _formKey.currentState!.save();
 
-    if (_location.isEmpty) {
+    if (_district == null || _district!.isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Please select a location')));
+      ).showSnackBar(const SnackBar(content: Text('Please select a district')));
+      return;
+    }
+
+    if (_latitude == null || _longitude == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please capture live location')),
+      );
       return;
     }
 
@@ -118,7 +132,9 @@ class _SellServicePageState extends State<SellServicePage> {
       'description': _description,
       'priceMin': _priceMinValue,
       'priceMax': _priceMaxValue,
-      'location': _location,
+      'district': _district,
+      'latitude': _latitude,
+      'longitude': _longitude,
       'timestamp': FieldValue.serverTimestamp(),
     });
 
@@ -128,6 +144,24 @@ class _SellServicePageState extends State<SellServicePage> {
       );
       Navigator.pop(context);
     }
+  }
+
+  void _zoomIn() {
+    setState(() {
+      _mapZoom = (_mapZoom + 1).clamp(1.0, 18.0);
+      if (_latitude != null && _longitude != null) {
+        _mapController.move(LatLng(_latitude!, _longitude!), _mapZoom);
+      }
+    });
+  }
+
+  void _zoomOut() {
+    setState(() {
+      _mapZoom = (_mapZoom - 1).clamp(1.0, 18.0);
+      if (_latitude != null && _longitude != null) {
+        _mapController.move(LatLng(_latitude!, _longitude!), _mapZoom);
+      }
+    });
   }
 
   @override
@@ -142,7 +176,6 @@ class _SellServicePageState extends State<SellServicePage> {
               key: _formKey,
               child: Column(
                 children: [
-                  // 🔹 Category Dropdown
                   DropdownButtonFormField<String>(
                     value: _category,
                     decoration: const InputDecoration(
@@ -150,27 +183,24 @@ class _SellServicePageState extends State<SellServicePage> {
                       prefixIcon: Icon(Icons.category),
                       border: OutlineInputBorder(),
                     ),
-                    items: _categories.map((String cat) {
-                      return DropdownMenuItem<String>(
-                        value: cat,
-                        child: Text(cat),
-                      );
-                    }).toList(),
-                    onChanged: (val) {
-                      setState(() => _category = val);
-                    },
+                    items: _categories
+                        .map(
+                          (cat) =>
+                              DropdownMenuItem(value: cat, child: Text(cat)),
+                        )
+                        .toList(),
+                    onChanged: (val) => setState(() => _category = val),
                     validator: (val) => val == null || val.isEmpty
-                        ? 'Please select a category'
+                        ? 'Please select category'
                         : null,
                     onSaved: (val) => _category = val,
                   ),
                   const SizedBox(height: 16),
-
-                  // Service Name
                   TextFormField(
                     decoration: const InputDecoration(
                       labelText: 'Service Name',
                       prefixIcon: Icon(Icons.build_circle),
+                      border: OutlineInputBorder(),
                     ),
                     onSaved: (val) => _serviceName = val!.trim(),
                     validator: (val) => val == null || val.isEmpty
@@ -178,12 +208,11 @@ class _SellServicePageState extends State<SellServicePage> {
                         : null,
                   ),
                   const SizedBox(height: 16),
-
-                  // Description
                   TextFormField(
                     decoration: const InputDecoration(
                       labelText: 'Description',
                       prefixIcon: Icon(Icons.description),
+                      border: OutlineInputBorder(),
                     ),
                     maxLines: 3,
                     onSaved: (val) => _description = val!.trim(),
@@ -191,8 +220,6 @@ class _SellServicePageState extends State<SellServicePage> {
                         val == null || val.isEmpty ? 'Enter description' : null,
                   ),
                   const SizedBox(height: 24),
-
-                  // 🔹 Price Range
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -209,7 +236,7 @@ class _SellServicePageState extends State<SellServicePage> {
                           _priceMinValue.toStringAsFixed(0),
                           _priceMaxValue.toStringAsFixed(0),
                         ),
-                        onChanged: (RangeValues values) {
+                        onChanged: (values) {
                           setState(() {
                             _priceMinValue = values.start.roundToDouble();
                             _priceMaxValue = values.end.roundToDouble();
@@ -219,29 +246,122 @@ class _SellServicePageState extends State<SellServicePage> {
                     ],
                   ),
                   const SizedBox(height: 24),
-
-                  // 🔹 Location row: GPS + Dropdown
+                  DropdownButtonFormField<String>(
+                    value: _district,
+                    decoration: const InputDecoration(
+                      labelText: 'District',
+                      prefixIcon: Icon(Icons.location_on),
+                      border: OutlineInputBorder(),
+                    ),
+                    items:
+                        [
+                              'Colombo',
+                              'Gampaha',
+                              'Kandy',
+                              'Jaffna',
+                              'Galle',
+                              'Other',
+                            ]
+                            .map(
+                              (d) => DropdownMenuItem(value: d, child: Text(d)),
+                            )
+                            .toList(),
+                    onChanged: (val) => setState(() => _district = val),
+                    validator: (val) => val == null || val.isEmpty
+                        ? 'Please select district'
+                        : null,
+                  ),
+                  const SizedBox(height: 16),
                   Row(
                     children: [
-                      IconButton(
+                      ElevatedButton.icon(
                         icon: _loadingLocation
-                            ? const CircularProgressIndicator()
-                            : const Icon(Icons.my_location, color: Colors.blue),
+                            ? const CircularProgressIndicator(
+                                color: Colors.white,
+                              )
+                            : const Icon(Icons.my_location),
+                        label: const Text('Capture Live Location'),
                         onPressed: _loadingLocation ? null : _detectLocation,
                       ),
-                      Expanded(
-                        child: LocationSelector(
-                          selectedLocation: _location,
-                          onLocationSelected: (val) {
-                            setState(() => _location = val);
-                          },
+                      if (_latitude != null && _longitude != null) ...[
+                        const SizedBox(width: 16),
+                        const Icon(Icons.check_circle, color: Colors.green),
+                        const SizedBox(width: 4),
+                        const Text(
+                          'Location captured',
+                          style: TextStyle(color: Colors.green),
                         ),
-                      ),
+                      ],
                     ],
                   ),
+                  const SizedBox(height: 16),
+                  // Map with manual selection
+                  SizedBox(
+                    height: 300,
+                    child: Stack(
+                      children: [
+                        FlutterMap(
+                          mapController: _mapController,
+                          options: MapOptions(
+                            initialCenter: LatLng(
+                              _latitude ?? defaultLat,
+                              _longitude ?? defaultLng,
+                            ),
+                            initialZoom: _mapZoom,
+                            onTap: (tapPosition, point) {
+                              setState(() {
+                                _latitude = point.latitude;
+                                _longitude = point.longitude;
+                              });
+                            },
+                          ),
+                          children: [
+                            TileLayer(
+                              urlTemplate:
+                                  'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                              userAgentPackageName:
+                                  'com.example.nearm_services',
+                            ),
+                            MarkerLayer(
+                              markers: [
+                                if (_latitude != null && _longitude != null)
+                                  Marker(
+                                    point: LatLng(_latitude!, _longitude!),
+                                    width: 50,
+                                    height: 50,
+                                    child: const Icon(
+                                      Icons.location_on,
+                                      color: Colors.red,
+                                      size: 40,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        Positioned(
+                          right: 8,
+                          top: 8,
+                          child: Column(
+                            children: [
+                              FloatingActionButton(
+                                mini: true,
+                                onPressed: _zoomIn,
+                                child: const Icon(Icons.add),
+                              ),
+                              const SizedBox(height: 8),
+                              FloatingActionButton(
+                                mini: true,
+                                onPressed: _zoomOut,
+                                child: const Icon(Icons.remove),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                   const SizedBox(height: 24),
-
-                  // 🔹 Save Button
                   SizedBox(
                     width: double.infinity,
                     height: 50,

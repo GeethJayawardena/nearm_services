@@ -4,6 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'chat_page.dart';
 import 'main.dart';
 import 'bank_details_page.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 
 class ServiceDetailsPage extends StatefulWidget {
   final String serviceId;
@@ -22,6 +24,8 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
   Map<String, dynamic>? _serviceData;
   List<Map<String, dynamic>> _reviews = [];
   final TextEditingController _priceController = TextEditingController();
+  final MapController _mapController = MapController();
+  double _mapZoom = 15.0;
 
   @override
   void initState() {
@@ -63,7 +67,6 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
       Map<String, dynamic>? activeRequest;
 
       if (_isSeller) {
-        // Seller sees all requests
         final requestsSnap = await FirebaseFirestore.instance
             .collection('services')
             .doc(widget.serviceId)
@@ -74,7 +77,6 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
           activeRequest = requestsSnap.docs.first.data();
         }
       } else {
-        // Buyer sees only their request
         final doc = await FirebaseFirestore.instance
             .collection('services')
             .doc(widget.serviceId)
@@ -266,6 +268,26 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
     );
   }
 
+  void _zoomIn() {
+    _mapZoom = (_mapZoom + 1).clamp(1.0, 18.0);
+    if (_serviceData != null) {
+      _mapController.move(
+        LatLng(_serviceData!['latitude'], _serviceData!['longitude']),
+        _mapZoom,
+      );
+    }
+  }
+
+  void _zoomOut() {
+    _mapZoom = (_mapZoom - 1).clamp(1.0, 18.0);
+    if (_serviceData != null) {
+      _mapController.move(
+        LatLng(_serviceData!['latitude'], _serviceData!['longitude']),
+        _mapZoom,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -284,7 +306,73 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
             "Price: ${_serviceData?['priceMin'] ?? '-'} - ${_serviceData?['priceMax'] ?? '-'}",
             style: const TextStyle(fontWeight: FontWeight.bold),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
+
+          // Flutter Map
+          if (_serviceData?['latitude'] != null &&
+              _serviceData?['longitude'] != null)
+            SizedBox(
+              height: 250,
+              child: Stack(
+                children: [
+                  FlutterMap(
+                    mapController: _mapController,
+                    options: MapOptions(
+                      initialCenter: LatLng(
+                        _serviceData!['latitude'],
+                        _serviceData!['longitude'],
+                      ),
+                      initialZoom: _mapZoom,
+                      minZoom: 5,
+                      maxZoom: 18,
+                    ),
+                    children: [
+                      TileLayer(
+                        urlTemplate:
+                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        userAgentPackageName: 'com.example.nearm_services',
+                      ),
+                      MarkerLayer(
+                        markers: [
+                          Marker(
+                            point: LatLng(
+                              _serviceData!['latitude'],
+                              _serviceData!['longitude'],
+                            ),
+                            width: 40,
+                            height: 40,
+                            child: const Icon(
+                              Icons.location_on,
+                              color: Colors.red,
+                              size: 40,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Column(
+                      children: [
+                        FloatingActionButton(
+                          mini: true,
+                          onPressed: _zoomIn,
+                          child: const Icon(Icons.add),
+                        ),
+                        const SizedBox(height: 4),
+                        FloatingActionButton(
+                          mini: true,
+                          onPressed: _zoomOut,
+                          child: const Icon(Icons.remove),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
 
           // Booking / request actions
           if (!_isSeller && _requestData == null)
@@ -375,7 +463,6 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                     ),
                     child: const Text('Mark Job Completed'),
                   ),
-                // Buyer after job completed
                 if (!_isSeller && _requestData!['status'] == 'completed')
                   ElevatedButton(
                     onPressed: _payNow,
@@ -384,7 +471,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
               ],
             ),
 
-          // Previous reviews at the bottom
+          // Previous reviews
           if (_reviews.isNotEmpty) ...[
             const SizedBox(height: 32),
             const Text(
