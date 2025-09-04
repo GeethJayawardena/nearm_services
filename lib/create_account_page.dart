@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -14,50 +15,127 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _otpController = TextEditingController();
+
   bool _loading = false;
+  bool _otpSent = false;
+  String? _generatedOtp;
+
+  // Country code dropdown
+  String _selectedCountryCode = "+94"; // default Sri Lanka
+  final List<String> _countryCodes = ["+94", "+91", "+44", "+1", "+61"];
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  String _generateOtp() {
+    final random = Random();
+    return (100000 + random.nextInt(900000)).toString();
+  }
+
+  void _showOtpNotification(String otp) {
+    OverlayEntry? overlayEntry;
+
+    overlayEntry = OverlayEntry(
+      builder: (context) => Positioned(
+        top: 50,
+        left: 16,
+        right: 16,
+        child: Material(
+          elevation: 6,
+          borderRadius: BorderRadius.circular(12),
+          color: Colors.blue[800],
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              children: [
+                const Icon(Icons.message, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    "Your OTP is: $otp",
+                    style: const TextStyle(color: Colors.white, fontSize: 16),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => overlayEntry?.remove(),
+                  child: const Text(
+                    "OK",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    Overlay.of(context)?.insert(overlayEntry);
+    Future.delayed(const Duration(seconds: 5), () => overlayEntry?.remove());
+  }
+
+  Future<void> _sendOtp() async {
+    if (_phoneController.text.isEmpty) {
+      _showMessage('Enter phone number first');
+      return;
+    }
+
+    setState(() => _loading = true);
+    await Future.delayed(const Duration(seconds: 1)); // simulate delay
+
+    _generatedOtp = _generateOtp();
+    _otpSent = true;
+    setState(() => _loading = false);
+
+    _showOtpNotification(_generatedOtp!);
   }
 
   Future<void> _createAccount() async {
     if (!_formKey.currentState!.validate()) return;
-
-    final name = _nameController.text.trim();
-    final email = _emailController.text.trim();
-    final password = _passwordController.text.trim();
+    if (!_otpSent) {
+      _showMessage('Send OTP first');
+      return;
+    }
+    if (_otpController.text.trim() != _generatedOtp) {
+      _showMessage('Invalid OTP ❌');
+      return;
+    }
 
     setState(() => _loading = true);
 
     try {
+      String fullPhone = "$_selectedCountryCode${_phoneController.text.trim()}";
+
       UserCredential userCredential = await FirebaseAuth.instance
-          .createUserWithEmailAndPassword(email: email, password: password);
+          .createUserWithEmailAndPassword(
+            email: _emailController.text.trim(),
+            password: _passwordController.text.trim(),
+          );
 
-      final user = userCredential.user;
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userCredential.user?.uid)
+          .set({
+            'name': _nameController.text.trim(),
+            'email': _emailController.text.trim(),
+            'phone': fullPhone,
+            'role': 'user',
+            'createdAt': FieldValue.serverTimestamp(),
+            'phoneVerified': true,
+          });
 
-      if (user != null) {
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-          'name': name,
-          'email': email,
-          'role': 'user',
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-      }
-
-      _showMessage("Account created successfully!");
+      _showMessage('✅ Account created successfully!');
       Navigator.pushReplacementNamed(context, '/');
-    } on FirebaseAuthException catch (e) {
-      String errorMsg = 'Registration failed';
-      if (e.code == 'email-already-in-use') {
-        errorMsg = 'This email is already in use.';
-      } else if (e.code == 'invalid-email') {
-        errorMsg = 'Invalid email address.';
-      } else if (e.code == 'weak-password') {
-        errorMsg = 'Password should be at least 6 characters.';
-      }
-      _showMessage(errorMsg);
     } catch (e) {
-      _showMessage("Error: $e");
+      _showMessage('Error: $e');
     } finally {
       setState(() => _loading = false);
     }
@@ -68,6 +146,8 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
     _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _phoneController.dispose();
+    _otpController.dispose();
     super.dispose();
   }
 
@@ -78,9 +158,8 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
         title: const Text("Create Account"),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            Navigator.pushReplacementNamed(context, '/login-choice');
-          },
+          onPressed: () =>
+              Navigator.pushReplacementNamed(context, '/login-choice'),
         ),
       ),
       body: Center(
@@ -128,9 +207,8 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
                         if (val == null || val.isEmpty) return 'Enter email';
                         if (!RegExp(
                           r'^[\w-]+@([\w-]+\.)+[\w]{2,4}$',
-                        ).hasMatch(val)) {
+                        ).hasMatch(val))
                           return 'Enter valid email';
-                        }
                         return null;
                       },
                     ),
@@ -149,38 +227,103 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
                       obscureText: true,
                       validator: (val) {
                         if (val == null || val.isEmpty) return 'Enter password';
-                        if (val.length < 6) {
+                        if (val.length < 6)
                           return 'Password must be at least 6 characters';
-                        }
                         return null;
                       },
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 16),
 
-                    // Button
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: _loading ? null : _createAccount,
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                    // Phone + Country Code
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 2,
+                          child: DropdownButtonFormField<String>(
+                            value: _selectedCountryCode,
+                            decoration: InputDecoration(
+                              labelText: "Code",
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            items: _countryCodes
+                                .map(
+                                  (code) => DropdownMenuItem(
+                                    value: code,
+                                    child: Text(code),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (val) => setState(() {
+                              _selectedCountryCode = val!;
+                            }),
                           ),
                         ),
-                        child: _loading
-                            ? const CircularProgressIndicator(
-                                color: Colors.white,
-                              )
-                            : const Text(
-                                'Create Account',
-                                style: TextStyle(fontSize: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          flex: 5,
+                          child: TextFormField(
+                            controller: _phoneController,
+                            decoration: InputDecoration(
+                              labelText: 'Phone Number',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
                               ),
+                              prefixIcon: const Icon(Icons.phone),
+                            ),
+                            keyboardType: TextInputType.phone,
+                            validator: (val) {
+                              if (val == null || val.isEmpty)
+                                return 'Enter phone number';
+                              if (!RegExp(r'^[0-9]{7,13}$').hasMatch(val))
+                                return 'Enter valid phone';
+                              return null;
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // OTP input after sending
+                    if (_otpSent)
+                      Column(
+                        children: [
+                          TextFormField(
+                            controller: _otpController,
+                            decoration: const InputDecoration(
+                              labelText: 'Enter OTP',
+                              prefixIcon: Icon(Icons.confirmation_number),
+                            ),
+                            keyboardType: TextInputType.number,
+                          ),
+                          const SizedBox(height: 8),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: _loading ? null : _sendOtp,
+                              child: const Text("Resend OTP"),
+                            ),
+                          ),
+                        ],
                       ),
+                    const SizedBox(height: 16),
+
+                    // Send OTP / Create Account button
+                    ElevatedButton(
+                      onPressed: _loading
+                          ? null
+                          : _otpSent
+                          ? _createAccount
+                          : _sendOtp,
+                      child: _loading
+                          ? const CircularProgressIndicator(color: Colors.white)
+                          : Text(_otpSent ? 'Create Account' : 'Send OTP'),
                     ),
                     const SizedBox(height: 12),
 
-                    // Back to Login
+                    // Back to login
                     TextButton(
                       onPressed: () => Navigator.pushReplacementNamed(
                         context,

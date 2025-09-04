@@ -45,6 +45,8 @@ dev_dependencies:
   geolocator: ^12.0.0
   geocoding: ^3.0.0
   intl: ^0.18.1
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
   # firebase_storage: ^11.5.0
   # firebase_messaging: ^14.7.5
   # google_maps_flutter: ^2.5.0

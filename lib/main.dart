@@ -3,13 +3,13 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+// ✅ Correct imports (no duplicates)
 import 'login_choice_page.dart';
-import 'email_login_page.dart';
+import 'email_login_page.dart'; // EmailLoginPage
+import 'create_account_page.dart'; // CreateAccountPage
 import 'home_page.dart';
 import 'sell_service_page.dart';
-import 'create_account_page.dart';
 import 'admin_dashboard.dart';
-
 
 // Global RouteObserver for page refresh
 final RouteObserver<ModalRoute> routeObserver = RouteObserver<ModalRoute>();
@@ -29,10 +29,10 @@ class MyApp extends StatelessWidget {
       title: 'NearMe Services',
       debugShowCheckedModeBanner: false,
       home: const LandingPage(),
-      navigatorObservers: [routeObserver], // Add this for RouteObserver
+      navigatorObservers: [routeObserver],
       routes: {
         '/login-choice': (context) => const LoginChoicePage(),
-        '/login-email': (context) => const EmailLoginPage(),
+        '/login-email': (context) => EmailLoginPage(), // removed const
         '/create-account': (context) => const CreateAccountPage(),
         '/home': (context) => const HomePage(),
         '/sell-service': (context) => const SellServicePage(),
@@ -53,7 +53,7 @@ class LandingPage extends StatelessWidget {
     final role = doc.data()?['role'] ?? 'user';
 
     if (role == 'admin') return const AdminDashboard();
-    return const HomePage(); // sellers and normal users
+    return const HomePage();
   }
 
   @override
