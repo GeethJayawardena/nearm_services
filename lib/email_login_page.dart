@@ -24,13 +24,16 @@ class _EmailLoginPageState extends State<EmailLoginPage> {
   String? _userPhone;
 
   final List<String> _countryCodes = ['+94', '+91', '+44', '+1', '+61'];
-
-  OverlayEntry? _otpOverlay; // overlay for top notification
+  OverlayEntry? _otpOverlay;
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: Colors.blue.shade700,
+      ),
+    );
   }
 
   String _generateOtp() {
@@ -39,17 +42,17 @@ class _EmailLoginPageState extends State<EmailLoginPage> {
   }
 
   void _showOtpNotification(String otp) {
-    _otpOverlay?.remove(); // remove previous overlay if any
+    _otpOverlay?.remove();
 
     _otpOverlay = OverlayEntry(
       builder: (context) => Positioned(
-        top: 50,
+        top: 60,
         left: 16,
         right: 16,
         child: Material(
           elevation: 8,
-          borderRadius: BorderRadius.circular(12),
-          color: Colors.blue[800],
+          borderRadius: BorderRadius.circular(16),
+          color: Colors.deepPurple.shade400,
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
@@ -59,7 +62,10 @@ class _EmailLoginPageState extends State<EmailLoginPage> {
                 Expanded(
                   child: Text(
                     "Your OTP is: $otp",
-                    style: const TextStyle(color: Colors.white, fontSize: 16),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
                 TextButton(
@@ -84,7 +90,6 @@ class _EmailLoginPageState extends State<EmailLoginPage> {
 
     Overlay.of(context)?.insert(_otpOverlay!);
 
-    // Auto remove after 5 seconds
     Future.delayed(const Duration(seconds: 5), () {
       _otpOverlay?.remove();
       _otpOverlay = null;
@@ -104,7 +109,6 @@ class _EmailLoginPageState extends State<EmailLoginPage> {
       UserCredential cred = await FirebaseAuth.instance
           .signInWithEmailAndPassword(email: email, password: password);
 
-      // Fetch user from Firestore
       final doc = await FirebaseFirestore.instance
           .collection('users')
           .doc(cred.user!.uid)
@@ -116,13 +120,10 @@ class _EmailLoginPageState extends State<EmailLoginPage> {
         if (savedPhone != enteredPhone) {
           _showMessage("⚠️ Phone number does not match our records.");
           await FirebaseAuth.instance.signOut();
-          setState(() {
-            _otpSent = false;
-          });
+          setState(() => _otpSent = false);
           return;
         }
 
-        // Phone matches → generate OTP
         _userPhone = savedPhone;
         _generatedOtp = _generateOtp();
         setState(() => _otpSent = true);
@@ -130,9 +131,7 @@ class _EmailLoginPageState extends State<EmailLoginPage> {
       } else {
         _showMessage("⚠️ No phone number saved. Please create account first.");
         await FirebaseAuth.instance.signOut();
-        setState(() {
-          _otpSent = false;
-        });
+        setState(() => _otpSent = false);
       }
     } on FirebaseAuthException catch (e) {
       String message = 'Login failed';
@@ -176,135 +175,228 @@ class _EmailLoginPageState extends State<EmailLoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Email + Phone Login")),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Card(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+      body: Stack(
+        children: [
+          // Background gradient
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Colors.deepPurple, Colors.purpleAccent],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
             ),
-            elevation: 6,
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Email
-                    TextFormField(
-                      controller: _emailController,
-                      decoration: const InputDecoration(
-                        labelText: 'Email',
-                        prefixIcon: Icon(Icons.email),
-                        border: OutlineInputBorder(),
-                      ),
-                      keyboardType: TextInputType.emailAddress,
-                      validator: (val) =>
-                          val == null || val.isEmpty ? 'Enter email' : null,
-                    ),
-                    const SizedBox(height: 16),
+          ),
 
-                    // Password
-                    TextFormField(
-                      controller: _passwordController,
-                      decoration: const InputDecoration(
-                        labelText: 'Password',
-                        prefixIcon: Icon(Icons.lock),
-                        border: OutlineInputBorder(),
-                      ),
-                      obscureText: true,
-                      validator: (val) =>
-                          val == null || val.isEmpty ? 'Enter password' : null,
-                    ),
-                    const SizedBox(height: 16),
+          // Back button
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 10,
+            left: 10,
+            child: IconButton(
+              icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ),
 
-                    // Phone + country code (only before OTP sent)
-                    if (!_otpSent)
-                      Row(
-                        children: [
-                          Expanded(
-                            flex: 2,
-                            child: DropdownButtonFormField<String>(
-                              value: _selectedCountryCode,
-                              decoration: const InputDecoration(
-                                labelText: 'Code',
-                                border: OutlineInputBorder(),
-                              ),
-                              items: _countryCodes
-                                  .map(
-                                    (code) => DropdownMenuItem(
-                                      value: code,
-                                      child: Text(code),
+          Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+              child: Card(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                elevation: 12,
+                shadowColor: Colors.black54,
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          "Welcome Back",
+                          style: TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.deepPurple,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          "Login to continue using your account",
+                          style: TextStyle(fontSize: 16, color: Colors.black54),
+                        ),
+                        const SizedBox(height: 32),
+
+                        // Email
+                        TextFormField(
+                          controller: _emailController,
+                          decoration: InputDecoration(
+                            labelText: 'Email',
+                            prefixIcon: const Icon(Icons.email),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            filled: true,
+                            fillColor: Colors.grey[100],
+                          ),
+                          keyboardType: TextInputType.emailAddress,
+                          validator: (val) =>
+                              val == null || val.isEmpty ? 'Enter email' : null,
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Password
+                        TextFormField(
+                          controller: _passwordController,
+                          decoration: InputDecoration(
+                            labelText: 'Password',
+                            prefixIcon: const Icon(Icons.lock),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            filled: true,
+                            fillColor: Colors.grey[100],
+                          ),
+                          obscureText: true,
+                          validator: (val) => val == null || val.isEmpty
+                              ? 'Enter password'
+                              : null,
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Phone input
+                        if (!_otpSent)
+                          Row(
+                            children: [
+                              Expanded(
+                                flex: 2,
+                                child: DropdownButtonFormField<String>(
+                                  value: _selectedCountryCode,
+                                  decoration: InputDecoration(
+                                    labelText: 'Code',
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(16),
                                     ),
-                                  )
-                                  .toList(),
-                              onChanged: (val) =>
-                                  setState(() => _selectedCountryCode = val!),
+                                    filled: true,
+                                    fillColor: Colors.grey[100],
+                                  ),
+                                  items: _countryCodes
+                                      .map(
+                                        (code) => DropdownMenuItem(
+                                          value: code,
+                                          child: Text(code),
+                                        ),
+                                      )
+                                      .toList(),
+                                  onChanged: (val) => setState(
+                                    () => _selectedCountryCode = val!,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                flex: 5,
+                                child: TextFormField(
+                                  controller: _phoneController,
+                                  decoration: InputDecoration(
+                                    labelText: 'Phone Number',
+                                    prefixIcon: const Icon(Icons.phone),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    filled: true,
+                                    fillColor: Colors.grey[100],
+                                  ),
+                                  keyboardType: TextInputType.phone,
+                                  validator: (val) {
+                                    if (val == null || val.isEmpty)
+                                      return 'Enter phone';
+                                    if (!RegExp(r'^[0-9]{7,13}$').hasMatch(val))
+                                      return 'Enter valid phone';
+                                    return null;
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                        if (!_otpSent) const SizedBox(height: 24),
+
+                        // Login button
+                        if (!_otpSent)
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: _isLoading ? null : _loginWithEmail,
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                backgroundColor: Colors.deepPurple,
+                              ),
+                              child: _isLoading
+                                  ? const CircularProgressIndicator(
+                                      color: Colors.white,
+                                    )
+                                  : const Text(
+                                      'Login',
+                                      style: TextStyle(fontSize: 16),
+                                    ),
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            flex: 5,
-                            child: TextFormField(
-                              controller: _phoneController,
-                              decoration: const InputDecoration(
-                                labelText: 'Phone Number',
-                                prefixIcon: Icon(Icons.phone),
-                                border: OutlineInputBorder(),
+
+                        // OTP verification
+                        if (_otpSent) ...[
+                          TextFormField(
+                            controller: _otpController,
+                            decoration: InputDecoration(
+                              labelText: 'Enter OTP',
+                              prefixIcon: const Icon(Icons.sms),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
                               ),
-                              keyboardType: TextInputType.phone,
-                              validator: (val) {
-                                if (val == null || val.isEmpty)
-                                  return 'Enter phone';
-                                if (!RegExp(r'^[0-9]{7,13}$').hasMatch(val))
-                                  return 'Enter valid phone';
-                                return null;
-                              },
+                              filled: true,
+                              fillColor: Colors.grey[100],
                             ),
+                            keyboardType: TextInputType.number,
+                          ),
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: _verifyOtp,
+                              style: ElevatedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                backgroundColor: Colors.deepPurple,
+                              ),
+                              child: const Text(
+                                'Verify OTP',
+                                style: TextStyle(fontSize: 16),
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: _resendOtp,
+                            child: const Text("Resend OTP"),
                           ),
                         ],
-                      ),
-                    if (!_otpSent) const SizedBox(height: 16),
-
-                    // Login / OTP
-                    if (!_otpSent)
-                      ElevatedButton(
-                        onPressed: _isLoading ? null : _loginWithEmail,
-                        child: _isLoading
-                            ? const CircularProgressIndicator(
-                                color: Colors.white,
-                              )
-                            : const Text('Login'),
-                      ),
-
-                    if (_otpSent) ...[
-                      TextFormField(
-                        controller: _otpController,
-                        decoration: const InputDecoration(
-                          labelText: 'Enter OTP',
-                          prefixIcon: Icon(Icons.sms),
-                          border: OutlineInputBorder(),
-                        ),
-                        keyboardType: TextInputType.number,
-                      ),
-                      const SizedBox(height: 12),
-                      ElevatedButton(
-                        onPressed: _verifyOtp,
-                        child: const Text("Verify OTP"),
-                      ),
-                      TextButton(
-                        onPressed: _resendOtp,
-                        child: const Text("Resend OTP"),
-                      ),
-                    ],
-                  ],
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }

@@ -47,11 +47,9 @@ class _SellServicePageState extends State<SellServicePage> {
   final MapController _mapController = MapController();
   double _mapZoom = 15.0;
 
-  // Default to Sri Lanka center
   final double defaultLat = 7.8731;
   final double defaultLng = 80.7718;
 
-  // Detect GPS coordinates
   Future<void> _detectLocation() async {
     setState(() => _loadingLocation = true);
     try {
@@ -78,7 +76,6 @@ class _SellServicePageState extends State<SellServicePage> {
         _longitude = pos.longitude;
       });
 
-      // Move map to captured location
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _mapController.move(LatLng(_latitude!, _longitude!), _mapZoom);
       });
@@ -95,7 +92,6 @@ class _SellServicePageState extends State<SellServicePage> {
     }
   }
 
-  // Save service to Firestore
   Future<void> _saveService() async {
     if (!_formKey.currentState!.validate()) return;
     _formKey.currentState!.save();
@@ -167,7 +163,22 @@ class _SellServicePageState extends State<SellServicePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Sell a Service')),
+      appBar: AppBar(
+        title: const Text(
+          'Sell a Service',
+          style: TextStyle(color: Colors.white),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.deepPurple, Colors.purpleAccent],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: ListView(
@@ -176,12 +187,20 @@ class _SellServicePageState extends State<SellServicePage> {
               key: _formKey,
               child: Column(
                 children: [
+                  // Category
                   DropdownButtonFormField<String>(
                     value: _category,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Category',
-                      prefixIcon: Icon(Icons.category),
-                      border: OutlineInputBorder(),
+                      prefixIcon: const Icon(
+                        Icons.category,
+                        color: Colors.deepPurple,
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                     items: _categories
                         .map(
@@ -196,11 +215,20 @@ class _SellServicePageState extends State<SellServicePage> {
                     onSaved: (val) => _category = val,
                   ),
                   const SizedBox(height: 16),
+
+                  // Service Name
                   TextFormField(
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Service Name',
-                      prefixIcon: Icon(Icons.build_circle),
-                      border: OutlineInputBorder(),
+                      prefixIcon: const Icon(
+                        Icons.build_circle,
+                        color: Colors.deepPurple,
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                     onSaved: (val) => _serviceName = val!.trim(),
                     validator: (val) => val == null || val.isEmpty
@@ -208,11 +236,20 @@ class _SellServicePageState extends State<SellServicePage> {
                         : null,
                   ),
                   const SizedBox(height: 16),
+
+                  // Description
                   TextFormField(
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Description',
-                      prefixIcon: Icon(Icons.description),
-                      border: OutlineInputBorder(),
+                      prefixIcon: const Icon(
+                        Icons.description,
+                        color: Colors.deepPurple,
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                     maxLines: 3,
                     onSaved: (val) => _description = val!.trim(),
@@ -220,38 +257,65 @@ class _SellServicePageState extends State<SellServicePage> {
                         val == null || val.isEmpty ? 'Enter description' : null,
                   ),
                   const SizedBox(height: 24),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Price Range: ${_priceMinValue.toStringAsFixed(0)} - ${_priceMaxValue.toStringAsFixed(0)}',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
+
+                  // Price Range
+                  Card(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    elevation: 4,
+                    shadowColor: Colors.purple.withOpacity(0.3),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Price Range: ${_priceMinValue.toStringAsFixed(0)} - ${_priceMaxValue.toStringAsFixed(0)}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: Colors.deepPurple,
+                            ),
+                          ),
+                          RangeSlider(
+                            min: 0,
+                            max: 10000,
+                            divisions: 100,
+                            activeColor: Colors.deepPurple,
+                            inactiveColor: Colors.purple[100],
+                            values: RangeValues(_priceMinValue, _priceMaxValue),
+                            labels: RangeLabels(
+                              _priceMinValue.toStringAsFixed(0),
+                              _priceMaxValue.toStringAsFixed(0),
+                            ),
+                            onChanged: (values) {
+                              setState(() {
+                                _priceMinValue = values.start.roundToDouble();
+                                _priceMaxValue = values.end.roundToDouble();
+                              });
+                            },
+                          ),
+                        ],
                       ),
-                      RangeSlider(
-                        min: 0,
-                        max: 10000,
-                        divisions: 100,
-                        values: RangeValues(_priceMinValue, _priceMaxValue),
-                        labels: RangeLabels(
-                          _priceMinValue.toStringAsFixed(0),
-                          _priceMaxValue.toStringAsFixed(0),
-                        ),
-                        onChanged: (values) {
-                          setState(() {
-                            _priceMinValue = values.start.roundToDouble();
-                            _priceMaxValue = values.end.roundToDouble();
-                          });
-                        },
-                      ),
-                    ],
+                    ),
                   ),
                   const SizedBox(height: 24),
+
+                  // District
                   DropdownButtonFormField<String>(
                     value: _district,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'District',
-                      prefixIcon: Icon(Icons.location_on),
-                      border: OutlineInputBorder(),
+                      prefixIcon: const Icon(
+                        Icons.location_on,
+                        color: Colors.deepPurple,
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                     items:
                         [
@@ -272,16 +336,32 @@ class _SellServicePageState extends State<SellServicePage> {
                         : null,
                   ),
                   const SizedBox(height: 16),
+
+                  // Capture Live Location
                   Row(
                     children: [
                       ElevatedButton.icon(
                         icon: _loadingLocation
-                            ? const CircularProgressIndicator(
-                                color: Colors.white,
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
                               )
-                            : const Icon(Icons.my_location),
+                            : const Icon(
+                                Icons.my_location,
+                                color: Colors.white,
+                              ),
                         label: const Text('Capture Live Location'),
                         onPressed: _loadingLocation ? null : _detectLocation,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.deepPurple,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
                       ),
                       if (_latitude != null && _longitude != null) ...[
                         const SizedBox(width: 16),
@@ -295,49 +375,59 @@ class _SellServicePageState extends State<SellServicePage> {
                     ],
                   ),
                   const SizedBox(height: 16),
+
                   // Map with manual selection
                   SizedBox(
                     height: 300,
                     child: Stack(
                       children: [
-                        FlutterMap(
-                          mapController: _mapController,
-                          options: MapOptions(
-                            initialCenter: LatLng(
-                              _latitude ?? defaultLat,
-                              _longitude ?? defaultLng,
-                            ),
-                            initialZoom: _mapZoom,
-                            onTap: (tapPosition, point) {
-                              setState(() {
-                                _latitude = point.latitude;
-                                _longitude = point.longitude;
-                              });
-                            },
+                        Card(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
                           ),
-                          children: [
-                            TileLayer(
-                              urlTemplate:
-                                  'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                              userAgentPackageName:
-                                  'com.example.nearm_services',
-                            ),
-                            MarkerLayer(
-                              markers: [
-                                if (_latitude != null && _longitude != null)
-                                  Marker(
-                                    point: LatLng(_latitude!, _longitude!),
-                                    width: 50,
-                                    height: 50,
-                                    child: const Icon(
-                                      Icons.location_on,
-                                      color: Colors.red,
-                                      size: 40,
-                                    ),
-                                  ),
+                          elevation: 3,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: FlutterMap(
+                              mapController: _mapController,
+                              options: MapOptions(
+                                initialCenter: LatLng(
+                                  _latitude ?? defaultLat,
+                                  _longitude ?? defaultLng,
+                                ),
+                                initialZoom: _mapZoom,
+                                onTap: (tapPosition, point) {
+                                  setState(() {
+                                    _latitude = point.latitude;
+                                    _longitude = point.longitude;
+                                  });
+                                },
+                              ),
+                              children: [
+                                TileLayer(
+                                  urlTemplate:
+                                      'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                  userAgentPackageName:
+                                      'com.example.nearm_services',
+                                ),
+                                MarkerLayer(
+                                  markers: [
+                                    if (_latitude != null && _longitude != null)
+                                      Marker(
+                                        point: LatLng(_latitude!, _longitude!),
+                                        width: 50,
+                                        height: 50,
+                                        child: const Icon(
+                                          Icons.location_on,
+                                          color: Colors.red,
+                                          size: 40,
+                                        ),
+                                      ),
+                                  ],
+                                ),
                               ],
                             ),
-                          ],
+                          ),
                         ),
                         Positioned(
                           right: 8,
@@ -346,14 +436,22 @@ class _SellServicePageState extends State<SellServicePage> {
                             children: [
                               FloatingActionButton(
                                 mini: true,
+                                backgroundColor: Colors.deepPurple,
                                 onPressed: _zoomIn,
-                                child: const Icon(Icons.add),
+                                child: const Icon(
+                                  Icons.add,
+                                  color: Colors.white,
+                                ),
                               ),
                               const SizedBox(height: 8),
                               FloatingActionButton(
                                 mini: true,
+                                backgroundColor: Colors.deepPurple,
                                 onPressed: _zoomOut,
-                                child: const Icon(Icons.remove),
+                                child: const Icon(
+                                  Icons.remove,
+                                  color: Colors.white,
+                                ),
                               ),
                             ],
                           ),
@@ -362,18 +460,27 @@ class _SellServicePageState extends State<SellServicePage> {
                     ),
                   ),
                   const SizedBox(height: 24),
+
+                  // Save Button
                   SizedBox(
                     width: double.infinity,
                     height: 50,
                     child: ElevatedButton.icon(
-                      icon: const Icon(Icons.save),
+                      icon: const Icon(Icons.save, color: Colors.white),
                       label: const Text(
                         'Save Service',
-                        style: TextStyle(fontSize: 18),
+                        style: TextStyle(fontSize: 18, color: Colors.white),
                       ),
                       onPressed: _saveService,
+                      style: ElevatedButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        backgroundColor: Colors.deepPurple,
+                      ),
                     ),
                   ),
+                  const SizedBox(height: 24),
                 ],
               ),
             ),

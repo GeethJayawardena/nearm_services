@@ -149,7 +149,15 @@ class _HomePageState extends State<HomePage> {
     await showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text("Choose Location"),
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          "Choose Location",
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.deepPurple,
+          ),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -159,11 +167,25 @@ class _HomePageState extends State<HomePage> {
                 await _detectLocation();
               },
               icon: const Icon(Icons.my_location),
-              label: const Text("Use Current Location (GPS)"),
+              label: const Text("Use Current Location"),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.deepPurple.shade400,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
               value: selectedDistrict,
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: Colors.purple.shade50,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
               hint: const Text("Select District"),
               items: _districts
                   .map((d) => DropdownMenuItem(value: d, child: Text(d)))
@@ -179,10 +201,15 @@ class _HomePageState extends State<HomePage> {
           ),
           ElevatedButton(
             onPressed: () async {
-              if (selectedDistrict != null)
+              if (selectedDistrict != null) {
                 await _updateUserDistrict(selectedDistrict!);
+              }
               Navigator.pop(ctx);
             },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.deepPurple.shade400,
+              foregroundColor: Colors.white,
+            ),
             child: const Text("Save"),
           ),
         ],
@@ -196,7 +223,15 @@ class _HomePageState extends State<HomePage> {
     final shouldLogout = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text("Logout"),
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          "Logout",
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.deepPurple,
+          ),
+        ),
         content: const Text("Are you sure you want to log out?"),
         actions: [
           TextButton(
@@ -205,6 +240,10 @@ class _HomePageState extends State<HomePage> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.deepPurple.shade400,
+              foregroundColor: Colors.white,
+            ),
             child: const Text("Logout"),
           ),
         ],
@@ -227,12 +266,14 @@ class _HomePageState extends State<HomePage> {
     return collection.map((snap) {
       return snap.docs.where((doc) {
         final data = doc.data()! as Map<String, dynamic>;
-        if (currentUser != null && data['ownerId'] == currentUser.uid)
+        if (currentUser != null && data['ownerId'] == currentUser.uid) {
           return false;
+        }
         if (_userDistrict != null &&
             _userDistrict != "All Sri Lanka" &&
-            data['location'] != _userDistrict)
+            data['location'] != _userDistrict) {
           return false;
+        }
         return true;
       }).toList();
     });
@@ -249,85 +290,27 @@ class _HomePageState extends State<HomePage> {
         .snapshots();
   }
 
-  void _openNotificationsDialog(List<QueryDocumentSnapshot> notifications) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Notifications"),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: notifications.isEmpty
-              ? const Text("No notifications")
-              : ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: notifications.length,
-                  itemBuilder: (context, index) {
-                    final doc = notifications[index];
-                    final data = doc.data()! as Map<String, dynamic>;
-                    final userName = data['userName'] ?? 'Someone';
-                    final type = data['type'] ?? 'Notification';
-
-                    return ListTile(
-                      title: Text('$userName - $type'),
-                      subtitle: Text(
-                        data['timestamp'] != null
-                            ? (data['timestamp'] as Timestamp)
-                                  .toDate()
-                                  .toString()
-                            : '',
-                      ),
-                      onTap: () {
-                        Navigator.pop(ctx); // close the dialog
-
-                        // If it's a booking request, go to SellerDashboard
-                        if (data['type'] == 'booking_request' &&
-                            data['serviceId'] != null) {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => SellerDashboardPage(
-                                focusServiceId: data['serviceId'],
-                              ),
-                            ),
-                          );
-                        }
-                        // Otherwise, go to ServiceDetailsPage
-                        else if (data['serviceId'] != null) {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => ServiceDetailsPage(
-                                serviceId: data['serviceId'],
-                              ),
-                            ),
-                          );
-                        }
-                      },
-                    );
-                  },
-                ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text("Close"),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    if (_role == null)
+    if (_role == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
 
     return Scaffold(
-      backgroundColor: Colors.grey[100],
+      extendBodyBehindAppBar: true,
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('NearMe Services'),
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        title: const Text(
+          'NearMe Services',
+          style: TextStyle(
+            color: Colors.deepPurple,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         actions: [
           if (_userDistrict != null)
             Padding(
@@ -337,61 +320,25 @@ class _HomePageState extends State<HomePage> {
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
+                  color: Colors.deepPurple,
                 ),
               ),
             ),
-          // Notifications icon (your existing code)
-          StreamBuilder<QuerySnapshot>(
-            stream: _getNotifications(),
-            builder: (context, snap) {
-              int unreadCount = 0;
-              if (snap.hasData) unreadCount = snap.data!.docs.length;
-
-              return Stack(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.notifications),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => SellerDashboardPage(),
-                        ),
-                      );
-                    },
-                  ),
-                  if (unreadCount > 0)
-                    Positioned(
-                      right: 8,
-                      top: 8,
-                      child: Container(
-                        padding: const EdgeInsets.all(2),
-                        decoration: const BoxDecoration(
-                          color: Colors.red,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Text(
-                          unreadCount.toString(),
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
+          IconButton(
+            icon: const Icon(Icons.notifications, color: Colors.deepPurple),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => SellerDashboardPage()),
               );
             },
           ),
-
           IconButton(
-            icon: const Icon(Icons.location_on),
+            icon: const Icon(Icons.location_on, color: Colors.deepPurple),
             onPressed: _chooseLocationDialog,
           ),
-
-          // ✅ Add Profile Icon
           IconButton(
-            icon: const Icon(Icons.person),
+            icon: const Icon(Icons.person, color: Colors.deepPurple),
             onPressed: () {
               Navigator.push(
                 context,
@@ -399,135 +346,175 @@ class _HomePageState extends State<HomePage> {
               );
             },
           ),
-
           IconButton(
-            icon: const Icon(Icons.logout),
+            icon: const Icon(Icons.logout, color: Colors.deepPurple),
             onPressed: () => _confirmLogout(context),
           ),
         ],
       ),
-
       floatingActionButton: FloatingActionButton(
         onPressed: () => Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => const SellServicePage()),
         ),
-        backgroundColor: theme.primaryColor,
-        child: const Icon(Icons.add, size: 28),
-        tooltip: 'Sell a Service',
+        backgroundColor: Colors.deepPurple,
+        child: const Icon(Icons.add, size: 28, color: Colors.white),
       ),
-      body: StreamBuilder<List<QueryDocumentSnapshot>>(
-        stream: _getServicesStream(),
-        builder: (context, snap) {
-          if (snap.hasError) return Center(child: Text('Error: ${snap.error}'));
-          if (!snap.hasData)
-            return const Center(child: CircularProgressIndicator());
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Colors.purple.shade50, Colors.white],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: StreamBuilder<List<QueryDocumentSnapshot>>(
+          stream: _getServicesStream(),
+          builder: (context, snap) {
+            if (snap.hasError) {
+              return Center(child: Text('Error: ${snap.error}'));
+            }
+            if (!snap.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-          final services = snap.data!;
-          if (services.isEmpty)
-            return Center(
-              child: Text(
-                _userDistrict != null
-                    ? 'No services found in $_userDistrict.'
-                    : 'No services found.',
-                style: const TextStyle(fontSize: 16),
-              ),
-            );
-
-          return ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            itemCount: services.length,
-            itemBuilder: (context, i) {
-              final doc = services[i];
-              final data = doc.data()! as Map<String, dynamic>;
-              final ownerName = data['ownerName'] ?? '';
-              final ownerEmail = data['ownerEmail'] ?? '';
-
-              return Container(
-                margin: const EdgeInsets.symmetric(vertical: 6),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.grey.withOpacity(0.2),
-                      blurRadius: 8,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
-                ),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(16),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ServiceDetailsPage(serviceId: doc.id),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        data['name'] ?? '',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Wrap(
-                        spacing: 6,
-                        children: [
-                          Chip(
-                            label: Text(data['category'] ?? ''),
-                            backgroundColor: Colors.blue.shade50,
-                          ),
-                          Chip(
-                            label: Text(data['location'] ?? ''),
-                            backgroundColor: Colors.green.shade50,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Price: ${data['priceMin'] ?? ''} - ${data['priceMax'] ?? ''}',
-                        style: const TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                      Text(
-                        'Owner: ${ownerName.isNotEmpty ? ownerName : ownerEmail}',
-                        style: const TextStyle(color: Colors.grey),
-                      ),
-                      const SizedBox(height: 6),
-                      AverageRatingLine(serviceId: doc.id),
-                    ],
+            final services = snap.data!;
+            if (services.isEmpty) {
+              return Center(
+                child: Text(
+                  _userDistrict != null
+                      ? 'No services found in $_userDistrict.'
+                      : 'No services found.',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    color: Colors.deepPurple,
                   ),
                 ),
               );
-            },
-          );
-        },
+            }
+
+            return ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 80),
+              itemCount: services.length,
+              itemBuilder: (context, i) {
+                final doc = services[i];
+                final data = doc.data()! as Map<String, dynamic>;
+                final ownerName = data['ownerName'] ?? '';
+                final ownerEmail = data['ownerEmail'] ?? '';
+
+                return Container(
+                  margin: const EdgeInsets.symmetric(vertical: 8),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: Colors.purple.shade100, width: 1),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.purple.shade100.withOpacity(0.3),
+                        blurRadius: 6,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ServiceDetailsPage(serviceId: doc.id),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          data['name'] ?? '',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.deepPurple,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 6,
+                          children: [
+                            Chip(
+                              label: Text(data['category'] ?? ''),
+                              backgroundColor: Colors.purple.shade50,
+                              labelStyle: const TextStyle(
+                                color: Colors.deepPurple,
+                              ),
+                            ),
+                            Chip(
+                              label: Text(data['location'] ?? ''),
+                              backgroundColor: Colors.green.shade50,
+                              labelStyle: const TextStyle(color: Colors.green),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Price: ${data['priceMin'] ?? ''} - ${data['priceMax'] ?? ''}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w500,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        Text(
+                          'Owner: ${ownerName.isNotEmpty ? ownerName : ownerEmail}',
+                          style: const TextStyle(color: Colors.black54),
+                        ),
+                        const SizedBox(height: 6),
+                        AverageRatingLine(serviceId: doc.id),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        ),
       ),
       bottomNavigationBar: _isSeller
-          ? Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              child: ElevatedButton(
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const SellerDashboardPage(),
-                  ),
+          ? Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.deepPurple, Colors.purple.shade400],
                 ),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  backgroundColor: theme.primaryColor,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(20),
                 ),
-                child: const Text(
-                  'Seller Dashboard',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                child: ElevatedButton(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const SellerDashboardPage(),
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.transparent,
+                    shadowColor: Colors.transparent,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    'Seller Dashboard',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
                 ),
               ),
             )
@@ -560,7 +547,10 @@ class AverageRatingLine extends StatelessWidget {
           sum += (m['rating'] ?? 0).toDouble();
         }
         final avg = sum / docs.length;
-        return Text('⭐ ${avg.toStringAsFixed(1)} (${docs.length})');
+        return Text(
+          '⭐ ${avg.toStringAsFixed(1)} (${docs.length})',
+          style: const TextStyle(color: Colors.deepPurple),
+        );
       },
     );
   }

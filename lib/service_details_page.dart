@@ -1,11 +1,14 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'chat_page.dart';
-import 'main.dart';
 import 'bank_details_page.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
+import 'main.dart';
 
 class ServiceDetailsPage extends StatefulWidget {
   final String serviceId;
@@ -27,10 +30,21 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
   final MapController _mapController = MapController();
   double _mapZoom = 15.0;
 
+  // Location & distance variables
+  double? _roadDistanceKm;
+  bool _loadingDistance = false;
+  double? _userLat;
+  double? _userLng;
+  List<LatLng> _routePoints = [];
+
   @override
   void initState() {
     super.initState();
-    _loadServiceData();
+    _loadServiceData().then((_) {
+      if (_serviceData != null) {
+        _getLocationAndDistance();
+      }
+    });
   }
 
   @override
@@ -51,6 +65,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
     _loadServiceData();
   }
 
+  // ------------------ Firestore Data ------------------
   Future<void> _loadServiceData() async {
     final serviceDoc = await FirebaseFirestore.instance
         .collection('services')
@@ -61,45 +76,60 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
     _serviceData = serviceDoc.data();
     _ownerId = serviceDoc['ownerId'];
     final user = FirebaseAuth.instance.currentUser;
+
     if (user != null) {
       _isSeller = user.uid == _ownerId;
+      await _loadActiveRequest(user.uid);
+      await _loadReviews();
+    }
+  }
 
-      Map<String, dynamic>? activeRequest;
+  Future<void> _loadActiveRequest(String userId) async {
+    Map<String, dynamic>? activeRequest;
 
-      if (_isSeller) {
-        final requestsSnap = await FirebaseFirestore.instance
-            .collection('services')
-            .doc(widget.serviceId)
-            .collection('requests')
-            .get();
-
-        if (requestsSnap.docs.isNotEmpty) {
-          activeRequest = requestsSnap.docs.first.data();
-        }
-      } else {
-        final doc = await FirebaseFirestore.instance
-            .collection('services')
-            .doc(widget.serviceId)
-            .collection('requests')
-            .doc(user.uid)
-            .get();
-
-        if (doc.exists) {
-          final status = doc['status'] ?? 'pending';
-          if (status != 'done' && status != 'cancelled') {
-            activeRequest = doc.data();
-          }
-        }
-      }
-
-      // Load previous reviews
-      final reviewsSnap = await FirebaseFirestore.instance
+    if (_isSeller) {
+      final requestsSnap = await FirebaseFirestore.instance
           .collection('services')
           .doc(widget.serviceId)
           .collection('requests')
-          .where('buyerReview', isNotEqualTo: null)
+          .get();
+      if (requestsSnap.docs.isNotEmpty)
+        activeRequest = requestsSnap.docs.first.data();
+    } else {
+      final doc = await FirebaseFirestore.instance
+          .collection('services')
+          .doc(widget.serviceId)
+          .collection('requests')
+          .doc(userId)
           .get();
 
+      if (doc.exists) {
+        final status = doc['status'] ?? 'pending';
+        if (status != 'done' && status != 'cancelled')
+          activeRequest = doc.data();
+      }
+    }
+
+    setState(() {
+      _requestData = activeRequest;
+      if (_selectedDate == null &&
+          _requestData != null &&
+          _requestData!['bookingDate'] != null) {
+        final bd = _requestData!['bookingDate'];
+        _selectedDate = bd is Timestamp ? bd.toDate() : bd as DateTime?;
+      }
+    });
+  }
+
+  Future<void> _loadReviews() async {
+    final reviewsSnap = await FirebaseFirestore.instance
+        .collection('services')
+        .doc(widget.serviceId)
+        .collection('requests')
+        .where('buyerReview', isNotEqualTo: null)
+        .get();
+
+    setState(() {
       _reviews = reviewsSnap.docs
           .map(
             (d) => {
@@ -108,22 +138,10 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
             },
           )
           .toList();
-
-      setState(() {
-        _requestData = activeRequest;
-        if (_selectedDate == null &&
-            _requestData != null &&
-            _requestData!['bookingDate'] != null) {
-          final bd = _requestData!['bookingDate'];
-          if (bd is Timestamp)
-            _selectedDate = bd.toDate();
-          else if (bd is DateTime)
-            _selectedDate = bd;
-        }
-      });
-    }
+    });
   }
 
+  // ------------------ Booking / Request ------------------
   Future<void> _pickDate() async {
     final now = DateTime.now();
     final picked = await showDatePicker(
@@ -137,8 +155,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
 
   Future<void> _requestBooking() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null || _ownerId == null) return;
-    if (_selectedDate == null) {
+    if (user == null || _ownerId == null || _selectedDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Please select a booking date")),
       );
@@ -268,6 +285,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
     );
   }
 
+  // ------------------ Map / Location ------------------
   void _zoomIn() {
     _mapZoom = (_mapZoom + 1).clamp(1.0, 18.0);
     if (_serviceData != null) {
@@ -288,6 +306,102 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
     }
   }
 
+  Future<void> _getLocationAndDistance() async {
+    setState(() => _loadingDistance = true);
+    try {
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      _userLat = pos.latitude;
+      _userLng = pos.longitude;
+
+      if (_serviceData != null) {
+        final route = await _getRoadRoute(
+          _userLat!,
+          _userLng!,
+          _serviceData!['latitude'],
+          _serviceData!['longitude'],
+        );
+
+        if (route != null && route.isNotEmpty) {
+          _routePoints = route;
+          final distanceMeters = await _getRoadDistance(
+            _userLat!,
+            _userLng!,
+            _serviceData!['latitude'],
+            _serviceData!['longitude'],
+          );
+          setState(() => _roadDistanceKm = distanceMeters);
+        }
+
+        final center = LatLng(
+          (_userLat! + _serviceData!['latitude']) / 2,
+          (_userLng! + _serviceData!['longitude']) / 2,
+        );
+        _mapController.move(center, 12);
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed: $e')));
+    } finally {
+      setState(() => _loadingDistance = false);
+    }
+  }
+
+  Future<double?> _getRoadDistance(
+    double startLat,
+    double startLng,
+    double endLat,
+    double endLng,
+  ) async {
+    const apiKey = 'YOUR_OPENROUTESERVICE_API_KEY'; // Replace with your key
+    final url =
+        'https://api.openrouteservice.org/v2/directions/driving-car?api_key=$apiKey&start=$startLng,$startLat&end=$endLng,$endLat';
+    try {
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final distanceMeters =
+            data['features'][0]['properties']['segments'][0]['distance'];
+        return distanceMeters / 1000;
+      } else {
+        print('Routing error: ${response.body}');
+        return null;
+      }
+    } catch (e) {
+      print('Error fetching road distance: $e');
+      return null;
+    }
+  }
+
+  Future<List<LatLng>?> _getRoadRoute(
+    double startLat,
+    double startLng,
+    double endLat,
+    double endLng,
+  ) async {
+    const apiKey = 'YOUR_OPENROUTESERVICE_API_KEY'; // Replace with your key
+    final url =
+        'https://api.openrouteservice.org/v2/directions/driving-car?api_key=$apiKey&start=$startLng,$startLat&end=$endLng,$endLat';
+
+    try {
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final coords = data['features'][0]['geometry']['coordinates'] as List;
+        return coords.map((c) => LatLng(c[1], c[0])).toList();
+      } else {
+        print('Routing error: ${response.body}');
+        return null;
+      }
+    } catch (e) {
+      print('Error fetching road route: $e');
+      return null;
+    }
+  }
+
+  // ------------------ UI ------------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -308,23 +422,29 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
           ),
           const SizedBox(height: 16),
 
-          // Flutter Map
+          if (_roadDistanceKm != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                'Distance: ${_roadDistanceKm!.toStringAsFixed(1)} km',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+            ),
+
           if (_serviceData?['latitude'] != null &&
               _serviceData?['longitude'] != null)
             SizedBox(
-              height: 250,
+              height: 300,
               child: Stack(
                 children: [
                   FlutterMap(
                     mapController: _mapController,
                     options: MapOptions(
-                      initialCenter: LatLng(
-                        _serviceData!['latitude'],
-                        _serviceData!['longitude'],
-                      ),
-                      initialZoom: _mapZoom,
-                      minZoom: 5,
-                      maxZoom: 18,
+                      onPositionChanged: (pos, _) =>
+                          _mapZoom = pos.zoom ?? _mapZoom,
                     ),
                     children: [
                       TileLayer(
@@ -347,8 +467,29 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                               size: 40,
                             ),
                           ),
+                          if (_userLat != null && _userLng != null)
+                            Marker(
+                              point: LatLng(_userLat!, _userLng!),
+                              width: 40,
+                              height: 40,
+                              child: const Icon(
+                                Icons.person_pin_circle,
+                                color: Colors.blue,
+                                size: 40,
+                              ),
+                            ),
                         ],
                       ),
+                      if (_routePoints.isNotEmpty)
+                        PolylineLayer(
+                          polylines: [
+                            Polyline(
+                              points: _routePoints,
+                              color: Colors.green,
+                              strokeWidth: 4,
+                            ),
+                          ],
+                        ),
                     ],
                   ),
                   Positioned(
@@ -374,7 +515,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
               ),
             ),
 
-          // Booking / request actions
+          // ------------------ Booking / Requests ------------------
           if (!_isSeller && _requestData == null)
             Column(
               children: [
@@ -396,7 +537,6 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
               ],
             ),
 
-          // Existing request actions
           if (_requestData != null)
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -407,6 +547,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                   label: const Text('Chat'),
                 ),
                 const SizedBox(height: 12),
+
                 if (_isSeller &&
                     _requestData!['status'] == 'pending' &&
                     _requestData!['proposedPrice'] == null)
@@ -428,6 +569,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                       ),
                     ],
                   ),
+
                 if (!_isSeller &&
                     _requestData!['status'] == 'price_proposed' &&
                     _requestData!['buyerAgreed'] == null)
@@ -455,6 +597,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                       ),
                     ],
                   ),
+
                 if (_isSeller && _requestData!['status'] == 'buyer_agreed')
                   ElevatedButton(
                     onPressed: _completeJob,
@@ -463,6 +606,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                     ),
                     child: const Text('Mark Job Completed'),
                   ),
+
                 if (!_isSeller && _requestData!['status'] == 'completed')
                   ElevatedButton(
                     onPressed: _payNow,
@@ -471,7 +615,6 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
               ],
             ),
 
-          // Previous reviews
           if (_reviews.isNotEmpty) ...[
             const SizedBox(height: 32),
             const Text(

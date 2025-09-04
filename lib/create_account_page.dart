@@ -22,14 +22,17 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
   bool _otpSent = false;
   String? _generatedOtp;
 
-  // Country code dropdown
-  String _selectedCountryCode = "+94"; // default Sri Lanka
+  String _selectedCountryCode = "+94";
   final List<String> _countryCodes = ["+94", "+91", "+44", "+1", "+61"];
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: Colors.deepPurple,
+      ),
+    );
   }
 
   String _generateOtp() {
@@ -42,18 +45,18 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
 
     overlayEntry = OverlayEntry(
       builder: (context) => Positioned(
-        top: 50,
+        top: 60,
         left: 16,
         right: 16,
         child: Material(
           elevation: 6,
-          borderRadius: BorderRadius.circular(12),
-          color: Colors.blue[800],
+          borderRadius: BorderRadius.circular(16),
+          color: Colors.deepPurple,
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Row(
               children: [
-                const Icon(Icons.message, color: Colors.white),
+                const Icon(Icons.sms, color: Colors.white),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
@@ -89,7 +92,7 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
     }
 
     setState(() => _loading = true);
-    await Future.delayed(const Duration(seconds: 1)); // simulate delay
+    await Future.delayed(const Duration(seconds: 1));
 
     _generatedOtp = _generateOtp();
     _otpSent = true;
@@ -154,189 +157,247 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Create Account"),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () =>
-              Navigator.pushReplacementNamed(context, '/login-choice'),
-        ),
-      ),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Card(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+      body: Stack(
+        children: [
+          // Gradient background
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Colors.deepPurple, Colors.purpleAccent],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
             ),
-            elevation: 6,
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Name
-                    TextFormField(
-                      controller: _nameController,
-                      decoration: InputDecoration(
-                        labelText: 'Name',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        prefixIcon: const Icon(Icons.person),
-                      ),
-                      validator: (val) =>
-                          val == null || val.isEmpty ? 'Enter your name' : null,
-                    ),
-                    const SizedBox(height: 16),
+          ),
 
-                    // Email
-                    TextFormField(
-                      controller: _emailController,
-                      decoration: InputDecoration(
-                        labelText: 'Email',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        prefixIcon: const Icon(Icons.email),
-                      ),
-                      keyboardType: TextInputType.emailAddress,
-                      validator: (val) {
-                        if (val == null || val.isEmpty) return 'Enter email';
-                        if (!RegExp(
-                          r'^[\w-]+@([\w-]+\.)+[\w]{2,4}$',
-                        ).hasMatch(val))
-                          return 'Enter valid email';
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
+          // Back button
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 10,
+            left: 10,
+            child: IconButton(
+              icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ),
 
-                    // Password
-                    TextFormField(
-                      controller: _passwordController,
-                      decoration: InputDecoration(
-                        labelText: 'Password',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        prefixIcon: const Icon(Icons.lock),
-                      ),
-                      obscureText: true,
-                      validator: (val) {
-                        if (val == null || val.isEmpty) return 'Enter password';
-                        if (val.length < 6)
-                          return 'Password must be at least 6 characters';
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Phone + Country Code
-                    Row(
+          Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+              child: Card(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                elevation: 12,
+                shadowColor: Colors.black54,
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Expanded(
-                          flex: 2,
-                          child: DropdownButtonFormField<String>(
-                            value: _selectedCountryCode,
-                            decoration: InputDecoration(
-                              labelText: "Code",
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            items: _countryCodes
-                                .map(
-                                  (code) => DropdownMenuItem(
-                                    value: code,
-                                    child: Text(code),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: (val) => setState(() {
-                              _selectedCountryCode = val!;
-                            }),
+                        const Text(
+                          "Create Account",
+                          style: TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.deepPurple,
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          flex: 5,
-                          child: TextFormField(
-                            controller: _phoneController,
-                            decoration: InputDecoration(
-                              labelText: 'Phone Number',
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              prefixIcon: const Icon(Icons.phone),
+                        const SizedBox(height: 8),
+                        const Text(
+                          "Sign up to get started!",
+                          style: TextStyle(fontSize: 16, color: Colors.black54),
+                        ),
+                        const SizedBox(height: 32),
+
+                        // Name
+                        TextFormField(
+                          controller: _nameController,
+                          decoration: InputDecoration(
+                            labelText: 'Name',
+                            prefixIcon: const Icon(Icons.person),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
                             ),
-                            keyboardType: TextInputType.phone,
-                            validator: (val) {
-                              if (val == null || val.isEmpty)
-                                return 'Enter phone number';
-                              if (!RegExp(r'^[0-9]{7,13}$').hasMatch(val))
-                                return 'Enter valid phone';
-                              return null;
-                            },
+                            filled: true,
+                            fillColor: Colors.grey[100],
                           ),
+                          validator: (val) => val == null || val.isEmpty
+                              ? 'Enter your name'
+                              : null,
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Email
+                        TextFormField(
+                          controller: _emailController,
+                          decoration: InputDecoration(
+                            labelText: 'Email',
+                            prefixIcon: const Icon(Icons.email),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            filled: true,
+                            fillColor: Colors.grey[100],
+                          ),
+                          keyboardType: TextInputType.emailAddress,
+                          validator: (val) {
+                            if (val == null || val.isEmpty)
+                              return 'Enter email';
+                            if (!RegExp(
+                              r'^[\w-]+@([\w-]+\.)+[\w]{2,4}$',
+                            ).hasMatch(val))
+                              return 'Enter valid email';
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Password
+                        TextFormField(
+                          controller: _passwordController,
+                          decoration: InputDecoration(
+                            labelText: 'Password',
+                            prefixIcon: const Icon(Icons.lock),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            filled: true,
+                            fillColor: Colors.grey[100],
+                          ),
+                          obscureText: true,
+                          validator: (val) {
+                            if (val == null || val.isEmpty)
+                              return 'Enter password';
+                            if (val.length < 6)
+                              return 'Password must be at least 6 characters';
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Phone + Country Code
+                        Row(
+                          children: [
+                            Expanded(
+                              flex: 2,
+                              child: DropdownButtonFormField<String>(
+                                value: _selectedCountryCode,
+                                decoration: InputDecoration(
+                                  labelText: "Code",
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  filled: true,
+                                  fillColor: Colors.grey[100],
+                                ),
+                                items: _countryCodes
+                                    .map(
+                                      (code) => DropdownMenuItem(
+                                        value: code,
+                                        child: Text(code),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (val) => setState(() {
+                                  _selectedCountryCode = val!;
+                                }),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              flex: 5,
+                              child: TextFormField(
+                                controller: _phoneController,
+                                decoration: InputDecoration(
+                                  labelText: 'Phone Number',
+                                  prefixIcon: const Icon(Icons.phone),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  filled: true,
+                                  fillColor: Colors.grey[100],
+                                ),
+                                keyboardType: TextInputType.phone,
+                                validator: (val) {
+                                  if (val == null || val.isEmpty)
+                                    return 'Enter phone number';
+                                  if (!RegExp(r'^[0-9]{7,13}$').hasMatch(val))
+                                    return 'Enter valid phone';
+                                  return null;
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+
+                        // OTP
+                        if (_otpSent)
+                          Column(
+                            children: [
+                              TextFormField(
+                                controller: _otpController,
+                                decoration: const InputDecoration(
+                                  labelText: 'Enter OTP',
+                                  prefixIcon: Icon(Icons.confirmation_number),
+                                ),
+                                keyboardType: TextInputType.number,
+                              ),
+                              const SizedBox(height: 8),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: TextButton(
+                                  onPressed: _loading ? null : _sendOtp,
+                                  child: const Text("Resend OTP"),
+                                ),
+                              ),
+                            ],
+                          ),
+                        const SizedBox(height: 16),
+
+                        // Send OTP / Create Account button
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: _loading
+                                ? null
+                                : (_otpSent ? _createAccount : _sendOtp),
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              backgroundColor: Colors.deepPurple,
+                            ),
+                            child: _loading
+                                ? const CircularProgressIndicator(
+                                    color: Colors.white,
+                                  )
+                                : Text(
+                                    _otpSent ? 'Create Account' : 'Send OTP',
+                                    style: const TextStyle(fontSize: 16),
+                                  ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+
+                        TextButton(
+                          onPressed: () => Navigator.pushReplacementNamed(
+                            context,
+                            '/login-email',
+                          ),
+                          child: const Text('Back to Login'),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 16),
-
-                    // OTP input after sending
-                    if (_otpSent)
-                      Column(
-                        children: [
-                          TextFormField(
-                            controller: _otpController,
-                            decoration: const InputDecoration(
-                              labelText: 'Enter OTP',
-                              prefixIcon: Icon(Icons.confirmation_number),
-                            ),
-                            keyboardType: TextInputType.number,
-                          ),
-                          const SizedBox(height: 8),
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: TextButton(
-                              onPressed: _loading ? null : _sendOtp,
-                              child: const Text("Resend OTP"),
-                            ),
-                          ),
-                        ],
-                      ),
-                    const SizedBox(height: 16),
-
-                    // Send OTP / Create Account button
-                    ElevatedButton(
-                      onPressed: _loading
-                          ? null
-                          : _otpSent
-                          ? _createAccount
-                          : _sendOtp,
-                      child: _loading
-                          ? const CircularProgressIndicator(color: Colors.white)
-                          : Text(_otpSent ? 'Create Account' : 'Send OTP'),
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Back to login
-                    TextButton(
-                      onPressed: () => Navigator.pushReplacementNamed(
-                        context,
-                        '/login-email',
-                      ),
-                      child: const Text('Back to Login'),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
