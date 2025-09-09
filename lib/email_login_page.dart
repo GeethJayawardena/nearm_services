@@ -344,7 +344,10 @@ class _EmailLoginPageState extends State<EmailLoginPage> {
                                     )
                                   : const Text(
                                       'Login',
-                                      style: TextStyle(fontSize: 16),
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        color: Colors.white,
+                                      ),
                                     ),
                             ),
                           ),
@@ -380,7 +383,10 @@ class _EmailLoginPageState extends State<EmailLoginPage> {
                               ),
                               child: const Text(
                                 'Verify OTP',
-                                style: TextStyle(fontSize: 16),
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.white,
+                                ),
                               ),
                             ),
                           ),

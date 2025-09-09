@@ -20,6 +20,7 @@ class _HomePageState extends State<HomePage> {
   bool _isSeller = false;
   String? _userDistrict;
   String? _role;
+  bool _loading = true;
 
   final List<String> _districts = [
     "All Sri Lanka",
@@ -66,25 +67,22 @@ class _HomePageState extends State<HomePage> {
         .doc(user.uid)
         .get();
 
-    if (userDoc.exists) {
-      final role = userDoc.data()?['role'] ?? 'user';
-      setState(() => _role = role);
+    final role = userDoc.data()?['role'] ?? 'user';
 
-      if (role == 'admin') {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const AdminDashboard()),
-          );
-        });
-        return;
-      }
+    if (!mounted) return;
 
-      if (role == 'seller') {
-        setState(() => _isSeller = true);
-      }
+    if (role == 'admin') {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const AdminDashboard()),
+      );
+      return;
     } else {
-      setState(() => _role = 'user');
+      setState(() {
+        _role = 'user';
+        _isSeller = role == 'seller';
+        _loading = false;
+      });
     }
   }
 
@@ -279,22 +277,9 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  Stream<QuerySnapshot> _getNotifications() {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return const Stream.empty();
-
-    return FirebaseFirestore.instance
-        .collection('notifications')
-        .where('ownerId', isEqualTo: user.uid)
-        .orderBy('timestamp', descending: true)
-        .snapshots();
-  }
-
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    if (_role == null) {
+    if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
@@ -312,6 +297,34 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
         actions: [
+          // ✅ Notification Icon with red badge → Goes to SellerDashboard
+          Stack(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.notifications, color: Colors.deepPurple),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const SellerDashboardPage(),
+                    ),
+                  );
+                },
+              ),
+              Positioned(
+                right: 10,
+                top: 10,
+                child: Container(
+                  width: 12,
+                  height: 12,
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            ],
+          ),
           if (_userDistrict != null)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
@@ -324,15 +337,6 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
             ),
-          IconButton(
-            icon: const Icon(Icons.notifications, color: Colors.deepPurple),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => SellerDashboardPage()),
-              );
-            },
-          ),
           IconButton(
             icon: const Icon(Icons.location_on, color: Colors.deepPurple),
             onPressed: _chooseLocationDialog,

@@ -30,7 +30,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
   final MapController _mapController = MapController();
   double _mapZoom = 15.0;
 
-  // Location & distance variables
+  // Location & distance
   double? _roadDistanceKm;
   bool _loadingDistance = false;
   double? _userLat;
@@ -41,9 +41,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
   void initState() {
     super.initState();
     _loadServiceData().then((_) {
-      if (_serviceData != null) {
-        _getLocationAndDistance();
-      }
+      if (_serviceData != null) _getLocationAndDistance();
     });
   }
 
@@ -102,7 +100,6 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
           .collection('requests')
           .doc(userId)
           .get();
-
       if (doc.exists) {
         final status = doc['status'] ?? 'pending';
         if (status != 'done' && status != 'cancelled')
@@ -355,7 +352,8 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
     double endLat,
     double endLng,
   ) async {
-    const apiKey = 'YOUR_OPENROUTESERVICE_API_KEY'; // Replace with your key
+    const apiKey =
+        'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImIzNGNjNTEwZjNkOTQ3ZjZiZDQ0NmJmNGQ5NTg2ZTQ1IiwiaCI6Im11cm11cjY0In0=';
     final url =
         'https://api.openrouteservice.org/v2/directions/driving-car?api_key=$apiKey&start=$startLng,$startLat&end=$endLng,$endLat';
     try {
@@ -365,10 +363,8 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
         final distanceMeters =
             data['features'][0]['properties']['segments'][0]['distance'];
         return distanceMeters / 1000;
-      } else {
-        print('Routing error: ${response.body}');
-        return null;
       }
+      return null;
     } catch (e) {
       print('Error fetching road distance: $e');
       return null;
@@ -381,20 +377,18 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
     double endLat,
     double endLng,
   ) async {
-    const apiKey = 'YOUR_OPENROUTESERVICE_API_KEY'; // Replace with your key
+    const apiKey =
+        'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImIzNGNjNTEwZjNkOTQ3ZjZiZDQ0NmJmNGQ5NTg2ZTQ1IiwiaCI6Im11cm11cjY0In0=';
     final url =
         'https://api.openrouteservice.org/v2/directions/driving-car?api_key=$apiKey&start=$startLng,$startLat&end=$endLng,$endLat';
-
     try {
       final response = await http.get(Uri.parse(url));
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final coords = data['features'][0]['geometry']['coordinates'] as List;
         return coords.map((c) => LatLng(c[1], c[0])).toList();
-      } else {
-        print('Routing error: ${response.body}');
-        return null;
       }
+      return null;
     } catch (e) {
       print('Error fetching road route: $e');
       return null;
@@ -405,35 +399,71 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Service Details')),
+      backgroundColor: Colors.grey[100],
+      appBar: AppBar(
+        title: const Text('Service Details'),
+        backgroundColor: Colors.deepPurple,
+        elevation: 0,
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text(
-            _serviceData?['name'] ?? 'Service Name',
-            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          // Service Card
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black12,
+                  blurRadius: 10,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _serviceData?['name'] ?? 'Service Name',
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.deepPurple,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _serviceData?['description'] ?? 'Service Description',
+                  style: const TextStyle(color: Colors.black87, fontSize: 16),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  "Price: ${_serviceData?['priceMin'] ?? '-'} - ${_serviceData?['priceMax'] ?? '-'}",
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                if (_roadDistanceKm != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Distance: ${_roadDistanceKm!.toStringAsFixed(1)} km',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
-          const SizedBox(height: 8),
-          Text(_serviceData?['description'] ?? 'Service Description'),
-          const SizedBox(height: 8),
-          Text(
-            "Price: ${_serviceData?['priceMin'] ?? '-'} - ${_serviceData?['priceMax'] ?? '-'}",
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
+
           const SizedBox(height: 16),
 
-          if (_roadDistanceKm != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                'Distance: ${_roadDistanceKm!.toStringAsFixed(1)} km',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
-              ),
-            ),
-
+          // Map Section
           if (_serviceData?['latitude'] != null &&
               _serviceData?['longitude'] != null)
             SizedBox(
@@ -485,7 +515,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                           polylines: [
                             Polyline(
                               points: _routePoints,
-                              color: Colors.green,
+                              color: Colors.greenAccent,
                               strokeWidth: 4,
                             ),
                           ],
@@ -515,24 +545,50 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
               ),
             ),
 
-          // ------------------ Booking / Requests ------------------
+          const SizedBox(height: 16),
+
+          // Booking / Request Section
           if (!_isSeller && _requestData == null)
             Column(
               children: [
                 ElevatedButton(
                   onPressed: _pickDate,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.deepPurple,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 14,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
                   child: Text(
                     _selectedDate == null
                         ? 'Select Booking Date'
                         : "Booking Date: ${_selectedDate!.toLocal()}".split(
                             ' ',
                           )[0],
+                    style: const TextStyle(fontSize: 16),
                   ),
                 ),
                 const SizedBox(height: 12),
                 ElevatedButton(
                   onPressed: _requestBooking,
-                  child: const Text('Request Booking'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.deepPurpleAccent,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 14,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    'Request Booking',
+                    style: TextStyle(fontSize: 16),
+                  ),
                 ),
               ],
             ),
@@ -544,6 +600,12 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                 ElevatedButton.icon(
                   onPressed: _openChat,
                   icon: const Icon(Icons.chat),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blueAccent,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
                   label: const Text('Chat'),
                 ),
                 const SizedBox(height: 12),
@@ -610,6 +672,9 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                 if (!_isSeller && _requestData!['status'] == 'completed')
                   ElevatedButton(
                     onPressed: _payNow,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.deepPurple,
+                    ),
                     child: const Text('Pay Now'),
                   ),
               ],
@@ -619,7 +684,11 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
             const SizedBox(height: 32),
             const Text(
               'Previous Reviews',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.deepPurple,
+              ),
             ),
             const SizedBox(height: 12),
             Column(
@@ -628,6 +697,10 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                 final rating = r['rating'] ?? 0;
                 return Card(
                   margin: const EdgeInsets.symmetric(vertical: 6),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  elevation: 3,
                   child: ListTile(
                     title: Text(comment),
                     subtitle: Row(

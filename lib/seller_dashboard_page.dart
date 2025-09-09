@@ -54,7 +54,7 @@ class _SellerDashboardPageState extends State<SellerDashboardPage> {
         _scrollDone = true;
         break;
       }
-      offset += 120.0;
+      offset += 150.0; // approximate height of service+requests
     }
   }
 
@@ -62,6 +62,43 @@ class _SellerDashboardPageState extends State<SellerDashboardPage> {
   void dispose() {
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Widget _statusChip(String status) {
+    Color color;
+    switch (status.toLowerCase()) {
+      case "pending":
+        color = Colors.orange;
+        break;
+      case "approved":
+      case "buyeragreed":
+        color = Colors.green;
+        break;
+      case "completed":
+        color = Colors.blue;
+        break;
+      case "rejected":
+      case "cancelled":
+        color = Colors.red;
+        break;
+      default:
+        color = Colors.grey;
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        status.toUpperCase(),
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 12,
+        ),
+      ),
+    );
   }
 
   @override
@@ -96,43 +133,41 @@ class _SellerDashboardPageState extends State<SellerDashboardPage> {
                     onPressed: () {
                       showModalBottomSheet(
                         context: context,
-                        builder: (context) {
-                          return Container(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Text(
-                                  "Notifications",
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                        builder: (context) => Container(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text(
+                                "Notifications",
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
                                 ),
-                                const SizedBox(height: 12),
-                                if (count == 0)
-                                  const Text("No new notifications"),
-                                if (count > 0)
-                                  Text("$count unread notifications"),
-                                const SizedBox(height: 20),
-                                ElevatedButton(
-                                  onPressed: () async {
-                                    Navigator.pop(context);
-                                    await markNotificationsAsRead();
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) =>
-                                            const AllNotificationsPage(),
-                                      ),
-                                    );
-                                  },
-                                  child: const Text("View All"),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
+                              ),
+                              const SizedBox(height: 12),
+                              if (count == 0)
+                                const Text("No new notifications"),
+                              if (count > 0)
+                                Text("$count unread notifications"),
+                              const SizedBox(height: 20),
+                              ElevatedButton(
+                                onPressed: () async {
+                                  Navigator.pop(context);
+                                  await markNotificationsAsRead();
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          const AllNotificationsPage(),
+                                    ),
+                                  );
+                                },
+                                child: const Text("View All"),
+                              ),
+                            ],
+                          ),
+                        ),
                       );
                     },
                   ),
@@ -180,95 +215,105 @@ class _SellerDashboardPageState extends State<SellerDashboardPage> {
 
           return ListView(
             controller: _scrollController,
+            padding: const EdgeInsets.all(8),
             children: services.map((serviceDoc) {
               final serviceId = serviceDoc.id;
               final serviceData = serviceDoc.data()! as Map<String, dynamic>;
               final serviceName = serviceData['name'] ?? 'Unnamed Service';
 
-              return StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection('services')
-                    .doc(serviceId)
-                    .collection('requests')
-                    .snapshots(),
-                builder: (context, reqSnap) {
-                  if (!reqSnap.hasData) return const SizedBox();
-                  final requests = reqSnap.data!.docs;
-                  if (requests.isEmpty) return const SizedBox();
-
-                  return Column(
+              return Card(
+                margin: const EdgeInsets.symmetric(vertical: 6),
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Text(
-                          serviceName,
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: serviceId == widget.focusServiceId
-                                ? Colors.blue
-                                : Colors.black,
-                          ),
+                      Text(
+                        serviceName,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: serviceId == widget.focusServiceId
+                              ? Colors.blue
+                              : Colors.black,
                         ),
                       ),
-                      ...requests.map((reqDoc) {
-                        final reqData = reqDoc.data()! as Map<String, dynamic>;
-                        final userEmail =
-                            reqData['userEmail'] ?? reqData['userId'];
-
-                        // Build subtitle dynamically
-                        String subtitle = '';
-                        Color subtitleColor = Colors.black;
-                        if (reqData['status'] == 'pending') {
-                          subtitle = 'Pending booking request';
-                          subtitleColor = Colors.orange;
-                        } else if (reqData['status'] == 'approved' &&
-                            reqData['buyerAgreed'] == true) {
-                          subtitle = 'Buyer accepted proposed price';
-                          subtitleColor = Colors.green;
-                        } else if (reqData['status'] == 'completed' &&
-                            reqData['jobCompleted'] == true) {
-                          subtitle =
-                              'Job Completed • Payment: ${reqData['paymentStatus'] ?? 'Pending'}';
-                          subtitleColor = Colors.blue;
-                          if (reqData['buyerReview'] != null) {
-                            subtitle +=
-                                ' • Review: ${reqData['buyerReview']['rating']}/5';
+                      const SizedBox(height: 6),
+                      StreamBuilder<QuerySnapshot>(
+                        stream: FirebaseFirestore.instance
+                            .collection('services')
+                            .doc(serviceId)
+                            .collection('requests')
+                            .snapshots(),
+                        builder: (context, reqSnap) {
+                          if (!reqSnap.hasData || reqSnap.data!.docs.isEmpty) {
+                            return const Padding(
+                              padding: EdgeInsets.all(8.0),
+                              child: Text("No bookings yet"),
+                            );
                           }
-                        }
 
-                        return Card(
-                          margin: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          child: ListTile(
-                            title: Text('Booking from $userEmail'),
-                            subtitle: subtitle.isNotEmpty
-                                ? Text(
-                                    subtitle,
-                                    style: TextStyle(color: subtitleColor),
-                                  )
-                                : null,
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => RequestDetailsPage(
-                                    bookingId: reqDoc.id,
-                                    serviceId: serviceId,
-                                    userId: reqData['userId'],
+                          return Column(
+                            children: reqSnap.data!.docs.map((reqDoc) {
+                              final reqData =
+                                  reqDoc.data()! as Map<String, dynamic>;
+                              final userEmail =
+                                  reqData['userEmail'] ?? reqData['userId'];
+                              String subtitle = '';
+                              Color subtitleColor = Colors.black;
+
+                              if (reqData['status'] == 'pending') {
+                                subtitle = 'Pending booking request';
+                                subtitleColor = Colors.orange;
+                              } else if (reqData['status'] == 'approved' &&
+                                  reqData['buyerAgreed'] == true) {
+                                subtitle = 'Buyer accepted proposed price';
+                                subtitleColor = Colors.green;
+                              } else if (reqData['status'] == 'completed' &&
+                                  reqData['jobCompleted'] == true) {
+                                subtitle =
+                                    'Job Completed • Payment: ${reqData['paymentStatus'] ?? 'Pending'}';
+                                subtitleColor = Colors.blue;
+                                if (reqData['buyerReview'] != null) {
+                                  subtitle +=
+                                      ' • Review: ${reqData['buyerReview']['rating']}/5';
+                                }
+                              }
+
+                              return Card(
+                                margin: const EdgeInsets.symmetric(vertical: 4),
+                                child: ListTile(
+                                  title: Text('Booking from $userEmail'),
+                                  subtitle: subtitle.isNotEmpty
+                                      ? Text(
+                                          subtitle,
+                                          style: TextStyle(
+                                            color: subtitleColor,
+                                          ),
+                                        )
+                                      : null,
+                                  trailing: _statusChip(
+                                    reqData['status'] ?? 'pending',
+                                  ),
+                                  onTap: () => Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => RequestDetailsPage(
+                                        bookingId: reqDoc.id,
+                                        serviceId: serviceId,
+                                        userId: reqData['userId'],
+                                      ),
+                                    ),
                                   ),
                                 ),
                               );
-                            },
-                          ),
-                        );
-                      }).toList(),
+                            }).toList(),
+                          );
+                        },
+                      ),
                     ],
-                  );
-                },
+                  ),
+                ),
               );
             }).toList(),
           );

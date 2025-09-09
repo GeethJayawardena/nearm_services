@@ -1,10 +1,13 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+
 import 'request_details_page.dart';
 import 'service_details_page.dart';
 import 'edit_service_page.dart';
-import 'login_choice_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -35,7 +38,11 @@ class _ProfilePageState extends State<ProfilePage>
   TextEditingController _cvvController = TextEditingController();
   bool _editingBank = false;
 
-  List<String> _districts = [
+  // Profile picture
+  File? _profileImage;
+  String? _profileImageUrl; // store path in Firestore
+
+  final List<String> _districts = [
     "All Sri Lanka",
     "Colombo",
     "Gampaha",
@@ -64,7 +71,7 @@ class _ProfilePageState extends State<ProfilePage>
     "Kegalle",
   ];
 
-  List<String> _banksSriLanka = [
+  final List<String> _banksSriLanka = [
     'Bank of Ceylon',
     'Commercial Bank',
     'Sampath Bank',
@@ -94,7 +101,6 @@ class _ProfilePageState extends State<ProfilePage>
         .collection('users')
         .doc(user.uid)
         .get();
-
     if (doc.exists) {
       final data = doc.data()!;
       setState(() {
@@ -111,7 +117,14 @@ class _ProfilePageState extends State<ProfilePage>
         _cardController.text = data['cardNumber'] ?? '';
         _expiryController.text = data['expiryDate'] ?? '';
         _cvvController.text = data['cvv'] ?? '';
+        _profileImageUrl = data['profileImage'];
       });
+
+      if (_profileImageUrl != null && File(_profileImageUrl!).existsSync()) {
+        setState(() {
+          _profileImage = File(_profileImageUrl!);
+        });
+      }
     } else {
       setState(() {
         _emailController.text = user.email ?? '';
@@ -120,15 +133,42 @@ class _ProfilePageState extends State<ProfilePage>
     }
   }
 
+  Future<void> _pickProfileImage() async {
+    try {
+      final picker = ImagePicker();
+      final pickedFile = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 80,
+      );
+      if (pickedFile == null) return;
+
+      final dir = await getApplicationDocumentsDirectory();
+      final localImage = await File(
+        pickedFile.path,
+      ).copy('${dir.path}/profile.png');
+
+      setState(() {
+        _profileImage = localImage;
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Error picking image: $e")));
+    }
+  }
+
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
+    String? imagePath = _profileImage?.path ?? _profileImageUrl;
+
     await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
       'name': _nameController.text.trim(),
       'address': _addressController.text.trim(),
       'district': _district,
+      'profileImage': imagePath,
     }, SetOptions(merge: true));
 
     setState(() => _editingProfile = false);
@@ -156,52 +196,39 @@ class _ProfilePageState extends State<ProfilePage>
     ).showSnackBar(const SnackBar(content: Text('Bank details saved')));
   }
 
-  // ===== LOGOUT WITH CONFIRMATION =====
   Future<void> _logout() async {
-    // Show confirmation dialog
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Confirm Logout'),
-        content: const Text('Are you sure you want to logout?'),
+      builder: (_) => AlertDialog(
+        title: const Text("Logout Confirmation"),
+        content: const Text("Are you sure you want to logout?"),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(false), // Cancel
-            child: const Text('Cancel'),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancel"),
           ),
           ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true), // Confirm
-            child: const Text('Logout'),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("Logout"),
           ),
         ],
       ),
     );
-
-    // If user cancels, do nothing
     if (confirmed != true) return;
-
-    // Sign out from Firebase
     await FirebaseAuth.instance.signOut();
-
-    // Navigate to login page and remove all previous routes
-    Navigator.of(context).pushNamedAndRemoveUntil(
-      '/login', // make sure this is your login route
-      (route) => false,
-    );
+    Navigator.of(context).pushNamedAndRemoveUntil('/login', (_) => false);
   }
 
-  // ===== DELETE ACCOUNT WITH SAFE LOGOUT =====
   Future<void> _deleteAccount() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    // Confirmation dialog
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text("Confirm Account Deletion"),
+        title: const Text("Delete Account"),
         content: const Text(
-          "All your services, requests, and profile data will be permanently deleted. This cannot be undone.",
+          "This will permanently delete your account and all related data.",
         ),
         actions: [
           TextButton(
@@ -216,59 +243,45 @@ class _ProfilePageState extends State<ProfilePage>
         ],
       ),
     );
-
     if (confirmed != true) return;
 
     final firestore = FirebaseFirestore.instance;
-
     try {
-      // Delete user's profile
       await firestore.collection('users').doc(user.uid).delete();
 
-      // Delete all services created by user along with their requests
+      // Delete services & requests
       final servicesSnap = await firestore
           .collection('services')
           .where('ownerId', isEqualTo: user.uid)
           .get();
-
       for (var serviceDoc in servicesSnap.docs) {
         final requestsSnap = await serviceDoc.reference
             .collection('requests')
             .get();
-        for (var reqDoc in requestsSnap.docs) {
-          await reqDoc.reference.delete();
-        }
+        for (var reqDoc in requestsSnap.docs) await reqDoc.reference.delete();
         await serviceDoc.reference.delete();
       }
 
-      // Delete requests where user is buyer
+      // Delete user's requests on other services
       final allServicesSnap = await firestore.collection('services').get();
       for (var serviceDoc in allServicesSnap.docs) {
         final buyerRequestsSnap = await serviceDoc.reference
             .collection('requests')
             .where('userId', isEqualTo: user.uid)
             .get();
-        for (var reqDoc in buyerRequestsSnap.docs) {
+        for (var reqDoc in buyerRequestsSnap.docs)
           await reqDoc.reference.delete();
-        }
       }
 
-      // Delete Firebase Auth user
       await user.delete();
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Account deleted successfully')),
-      );
-
-      // Redirect to login page and remove all previous routes
-      Navigator.of(context).pushNamedAndRemoveUntil(
-        '/login', // make sure this is your login route
-        (route) => false,
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Account deleted")));
+      Navigator.of(context).pushNamedAndRemoveUntil('/login', (_) => false);
     } catch (e) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Error deleting account: $e')));
+      ).showSnackBar(SnackBar(content: Text("Error: $e")));
     }
   }
 
@@ -278,9 +291,9 @@ class _ProfilePageState extends State<ProfilePage>
       case "pending":
         color = Colors.orange;
         break;
+      case "accepted":
       case "price_proposed":
       case "buyer_agreed":
-      case "accepted":
         color = Colors.blue;
         break;
       case "completed":
@@ -293,44 +306,57 @@ class _ProfilePageState extends State<ProfilePage>
       default:
         color = Colors.grey;
     }
-    return Chip(
-      label: Text(status, style: const TextStyle(color: Colors.white)),
-      backgroundColor: color,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        status.toUpperCase(),
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 12,
+        ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
-
     return Scaffold(
+      backgroundColor: Colors.grey[100],
       appBar: AppBar(
-        title: const Text('Profile'),
+        title: const Text("Profile"),
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black87,
+        elevation: 1,
         actions: [
           IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: _logout, // <-- call the updated function
-            tooltip: 'Logout',
+            icon: const Icon(Icons.logout, color: Colors.redAccent),
+            onPressed: _logout,
           ),
-
           IconButton(
-            icon: const Icon(Icons.delete_forever),
+            icon: const Icon(Icons.delete_forever, color: Colors.red),
             onPressed: _deleteAccount,
-            tooltip: 'Delete Account',
           ),
         ],
         bottom: TabBar(
           controller: _tabController,
+          indicatorColor: Colors.deepPurple,
+          labelColor: Colors.deepPurple,
+          unselectedLabelColor: Colors.grey,
           tabs: const [
-            Tab(text: 'Profile'),
-            Tab(text: 'Dashboard'),
+            Tab(text: "Profile"),
+            Tab(text: "Dashboard"),
           ],
         ),
       ),
       body: TabBarView(
         controller: _tabController,
         children: [
-          // ===== PROFILE TAB =====
           SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -341,278 +367,26 @@ class _ProfilePageState extends State<ProfilePage>
               ],
             ),
           ),
-
-          // ===== DASHBOARD TAB WITH INTERNAL TABS =====
           Column(
             children: [
               TabBar(
                 controller: _dashboardTabController,
-                labelColor: Theme.of(context).primaryColor,
+                labelColor: Colors.deepPurple,
                 unselectedLabelColor: Colors.grey,
+                indicatorColor: Colors.deepPurple,
                 tabs: const [
-                  Tab(text: 'My Bookings'),
-                  Tab(text: 'Bookings on My Services'),
-                  Tab(text: 'My Services'),
+                  Tab(text: "My Bookings"),
+                  Tab(text: "Bookings on My Services"),
+                  Tab(text: "My Services"),
                 ],
               ),
               Expanded(
                 child: TabBarView(
                   controller: _dashboardTabController,
                   children: [
-                    // ===== MY BOOKINGS (Buyer) =====
-                    SingleChildScrollView(
-                      padding: const EdgeInsets.all(16),
-                      child: StreamBuilder<QuerySnapshot>(
-                        stream: FirebaseFirestore.instance
-                            .collection('services')
-                            .snapshots(),
-                        builder: (context, serviceSnapshot) {
-                          if (serviceSnapshot.connectionState ==
-                              ConnectionState.waiting) {
-                            return const Center(
-                              child: CircularProgressIndicator(),
-                            );
-                          }
-                          if (!serviceSnapshot.hasData ||
-                              serviceSnapshot.data!.docs.isEmpty) {
-                            return const Text("No bookings yet.");
-                          }
-
-                          List<Widget> bookingWidgets = [];
-
-                          for (var serviceDoc in serviceSnapshot.data!.docs) {
-                            final serviceId = serviceDoc.id;
-                            final serviceName = serviceDoc['name'] ?? 'Service';
-
-                            // Requests where user is buyer
-                            final requests = serviceDoc.reference.collection(
-                              'requests',
-                            );
-
-                            bookingWidgets.add(
-                              StreamBuilder<QuerySnapshot>(
-                                stream: requests
-                                    .where('userId', isEqualTo: user?.uid)
-                                    .snapshots(),
-                                builder: (context, reqSnapshot) {
-                                  if (!reqSnapshot.hasData ||
-                                      reqSnapshot.data!.docs.isEmpty) {
-                                    return const SizedBox();
-                                  }
-
-                                  return Column(
-                                    children: reqSnapshot.data!.docs.map((
-                                      reqDoc,
-                                    ) {
-                                      final data =
-                                          reqDoc.data() as Map<String, dynamic>;
-                                      final status =
-                                          (data['status'] ?? 'pending')
-                                              .toString();
-                                      String bookingDateText =
-                                          'Booking Date N/A';
-                                      if (data['bookingDate'] != null &&
-                                          data['bookingDate'] is Timestamp) {
-                                        bookingDateText =
-                                            (data['bookingDate'] as Timestamp)
-                                                .toDate()
-                                                .toLocal()
-                                                .toString()
-                                                .split(' ')[0];
-                                      }
-                                      return Card(
-                                        margin: const EdgeInsets.symmetric(
-                                          vertical: 6,
-                                        ),
-                                        child: ListTile(
-                                          title: Text(serviceName),
-                                          subtitle: Text(bookingDateText),
-                                          trailing: _statusChip(status),
-                                          onTap: () {
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder: (_) =>
-                                                    RequestDetailsPage(
-                                                      bookingId: reqDoc.id,
-                                                      serviceId: serviceId,
-                                                      userId: user!.uid,
-                                                    ),
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                      );
-                                    }).toList(),
-                                  );
-                                },
-                              ),
-                            );
-                          }
-
-                          if (bookingWidgets.isEmpty) {
-                            return const Text("No bookings yet.");
-                          }
-
-                          return Column(children: bookingWidgets);
-                        },
-                      ),
-                    ),
-
-                    // ===== BOOKINGS ON MY SERVICES (Seller) =====
-                    SingleChildScrollView(
-                      padding: const EdgeInsets.all(16),
-                      child: StreamBuilder<QuerySnapshot>(
-                        stream: FirebaseFirestore.instance
-                            .collection('services')
-                            .where('ownerId', isEqualTo: user?.uid)
-                            .snapshots(),
-                        builder: (context, serviceSnapshot) {
-                          if (serviceSnapshot.connectionState ==
-                              ConnectionState.waiting) {
-                            return const Center(
-                              child: CircularProgressIndicator(),
-                            );
-                          }
-                          if (!serviceSnapshot.hasData ||
-                              serviceSnapshot.data!.docs.isEmpty) {
-                            return const Text("No services posted yet.");
-                          }
-
-                          final serviceDocs = serviceSnapshot.data!.docs;
-
-                          return Column(
-                            children: serviceDocs.map((serviceDoc) {
-                              final serviceId = serviceDoc.id;
-                              final serviceName =
-                                  serviceDoc['name'] ?? 'Service';
-
-                              return StreamBuilder<QuerySnapshot>(
-                                stream: FirebaseFirestore.instance
-                                    .collection('services')
-                                    .doc(serviceId)
-                                    .collection('requests')
-                                    .snapshots(),
-                                builder: (context, requestSnapshot) {
-                                  if (requestSnapshot.connectionState ==
-                                      ConnectionState.waiting) {
-                                    return const SizedBox();
-                                  }
-                                  if (!requestSnapshot.hasData ||
-                                      requestSnapshot.data!.docs.isEmpty) {
-                                    return Card(
-                                      margin: const EdgeInsets.symmetric(
-                                        vertical: 6,
-                                      ),
-                                      child: ListTile(
-                                        title: Text(serviceName),
-                                        subtitle: const Text(
-                                          "No bookings on this service yet",
-                                        ),
-                                      ),
-                                    );
-                                  }
-
-                                  return Column(
-                                    children: requestSnapshot.data!.docs.map((
-                                      reqDoc,
-                                    ) {
-                                      final data =
-                                          reqDoc.data() as Map<String, dynamic>;
-                                      final status =
-                                          (data['status'] ?? 'pending')
-                                              .toString();
-                                      return Card(
-                                        margin: const EdgeInsets.symmetric(
-                                          vertical: 6,
-                                        ),
-                                        child: ListTile(
-                                          title: Text(
-                                            data['userName'] ?? 'Booking',
-                                          ),
-                                          subtitle: Text(
-                                            "$serviceName | ${data['bookingDate'] != null ? (data['bookingDate'] as Timestamp).toDate().toLocal().toString().split(' ')[0] : 'Booking Date N/A'}",
-                                          ),
-                                          trailing: _statusChip(status),
-                                          onTap: () {
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder: (_) =>
-                                                    RequestDetailsPage(
-                                                      bookingId: reqDoc.id,
-                                                      serviceId: serviceId,
-                                                      userId:
-                                                          data['userId'] ?? '',
-                                                    ),
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                      );
-                                    }).toList(),
-                                  );
-                                },
-                              );
-                            }).toList(),
-                          );
-                        },
-                      ),
-                    ),
-
-                    // ===== MY SERVICES =====
-                    SingleChildScrollView(
-                      padding: const EdgeInsets.all(16),
-                      child: StreamBuilder<QuerySnapshot>(
-                        stream: FirebaseFirestore.instance
-                            .collection('services')
-                            .where('ownerId', isEqualTo: user?.uid)
-                            .snapshots(),
-                        builder: (context, snapshot) {
-                          if (!snapshot.hasData) {
-                            return const Center(
-                              child: CircularProgressIndicator(),
-                            );
-                          }
-                          final docs = snapshot.data!.docs;
-                          if (docs.isEmpty)
-                            return const Text("No services posted.");
-
-                          return Column(
-                            children: docs.map((doc) {
-                              final data = doc.data() as Map<String, dynamic>;
-                              return Card(
-                                margin: const EdgeInsets.symmetric(vertical: 6),
-                                child: ListTile(
-                                  title: Text(
-                                    data['name'] ?? 'Service',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  subtitle: Text(data['category'] ?? ''),
-                                  trailing: const Icon(
-                                    Icons.edit,
-                                    color: Colors.blueAccent,
-                                  ),
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => EditServicePage(
-                                          serviceId: doc.id,
-                                          serviceData: data,
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              );
-                            }).toList(),
-                          );
-                        },
-                      ),
-                    ),
+                    _buildBookingsTab(user?.uid, buyer: true),
+                    _buildBookingsTab(user?.uid, buyer: false),
+                    _buildServicesTab(user?.uid),
                   ],
                 ),
               ),
@@ -623,60 +397,79 @@ class _ProfilePageState extends State<ProfilePage>
     );
   }
 
-  // ===== PROFILE CARD =====
+  // --- Profile Card ---
   Widget _buildProfileCard() {
     return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      elevation: 5,
+      shadowColor: Colors.grey.withOpacity(0.3),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         child: Form(
           key: _formKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _header("Profile Info", () {
-                setState(() => _editingProfile = !_editingProfile);
-              }, _editingProfile),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _nameController,
-                decoration: const InputDecoration(labelText: 'Name'),
-                readOnly: !_editingProfile,
-                validator: (val) =>
-                    val == null || val.isEmpty ? 'Enter name' : null,
+              _header(
+                "Profile Info",
+                () => setState(() => _editingProfile = !_editingProfile),
+                _editingProfile,
               ),
               const SizedBox(height: 12),
-              TextFormField(
-                controller: _emailController,
-                decoration: const InputDecoration(labelText: 'Email'),
-                readOnly: true,
+              Center(
+                child: Stack(
+                  children: [
+                    CircleAvatar(
+                      radius: 50,
+                      backgroundImage: _profileImage != null
+                          ? FileImage(_profileImage!)
+                          : (_profileImageUrl != null
+                                ? FileImage(File(_profileImageUrl!))
+                                : null),
+                      child: _profileImage == null && _profileImageUrl == null
+                          ? const Icon(Icons.person, size: 50)
+                          : null,
+                    ),
+                    if (_editingProfile)
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: IconButton(
+                          icon: const Icon(
+                            Icons.camera_alt,
+                            color: Colors.deepPurple,
+                          ),
+                          onPressed: _pickProfileImage,
+                        ),
+                      ),
+                  ],
+                ),
               ),
               const SizedBox(height: 12),
-              TextFormField(
-                controller: _addressController,
-                decoration: const InputDecoration(labelText: 'Address'),
-                readOnly: !_editingProfile,
-              ),
+              _textField(_nameController, "Name", _editingProfile),
+              const SizedBox(height: 12),
+              _textField(_emailController, "Email", false),
+              const SizedBox(height: 12),
+              _textField(_addressController, "Address", _editingProfile),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 value: _districts.contains(_district)
                     ? _district
                     : 'All Sri Lanka',
-                decoration: const InputDecoration(labelText: 'District'),
                 items: _districts
                     .map((d) => DropdownMenuItem(value: d, child: Text(d)))
                     .toList(),
                 onChanged: _editingProfile
                     ? (val) => setState(() => _district = val)
                     : null,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  labelText: "District",
+                ),
               ),
               const SizedBox(height: 16),
               if (_editingProfile)
-                ElevatedButton(
-                  onPressed: _saveProfile,
-                  child: const Text('Save Profile'),
-                ),
+                _gradientButton("Save Profile", _saveProfile),
             ],
           ),
         ),
@@ -684,67 +477,59 @@ class _ProfilePageState extends State<ProfilePage>
     );
   }
 
-  // ===== BANK CARD =====
+  // --- Bank Card ---
   Widget _buildBankCard() {
     return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      elevation: 5,
+      shadowColor: Colors.grey.withOpacity(0.3),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         child: Form(
           key: _bankFormKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _header("Bank Details", () {
-                setState(() => _editingBank = !_editingBank);
-              }, _editingBank),
+              _header(
+                "Bank Details",
+                () => setState(() => _editingBank = !_editingBank),
+                _editingBank,
+              ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 value: _banksSriLanka.contains(_bankName) ? _bankName : null,
-                decoration: const InputDecoration(labelText: 'Bank Name'),
                 items: _banksSriLanka
                     .map((b) => DropdownMenuItem(value: b, child: Text(b)))
                     .toList(),
                 onChanged: _editingBank
                     ? (val) => setState(() => _bankName = val)
                     : null,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _accountController,
-                decoration: const InputDecoration(labelText: 'Account Number'),
-                readOnly: !_editingBank,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _cardController,
-                decoration: const InputDecoration(labelText: 'Card Number'),
-                readOnly: !_editingBank,
-                obscureText: true,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: _expiryController,
                 decoration: const InputDecoration(
-                  labelText: 'Expiry Date (MM/YY)',
+                  border: OutlineInputBorder(),
+                  labelText: "Bank Name",
                 ),
-                readOnly: !_editingBank,
-                obscureText: true,
               ),
               const SizedBox(height: 12),
-              TextFormField(
-                controller: _cvvController,
-                decoration: const InputDecoration(labelText: 'CVV'),
-                readOnly: !_editingBank,
-                obscureText: true,
+              _textField(_accountController, "Account Number", _editingBank),
+              const SizedBox(height: 12),
+              _textField(
+                _cardController,
+                "Card Number",
+                _editingBank,
+                obscure: true,
               ),
+              const SizedBox(height: 12),
+              _textField(
+                _expiryController,
+                "Expiry Date (MM/YY)",
+                _editingBank,
+                obscure: true,
+              ),
+              const SizedBox(height: 12),
+              _textField(_cvvController, "CVV", _editingBank, obscure: true),
               const SizedBox(height: 16),
               if (_editingBank)
-                ElevatedButton(
-                  onPressed: _saveBankDetails,
-                  child: const Text('Save Bank Details'),
-                ),
+                _gradientButton("Save Bank Details", _saveBankDetails),
             ],
           ),
         ),
@@ -752,6 +537,7 @@ class _ProfilePageState extends State<ProfilePage>
     );
   }
 
+  // --- Helper Widgets ---
   Widget _header(String title, VoidCallback onTap, bool editing) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -762,6 +548,181 @@ class _ProfilePageState extends State<ProfilePage>
         ),
         TextButton(onPressed: onTap, child: Text(editing ? "Cancel" : "Edit")),
       ],
+    );
+  }
+
+  Widget _textField(
+    TextEditingController controller,
+    String label,
+    bool editable, {
+    bool obscure = false,
+  }) {
+    return TextFormField(
+      controller: controller,
+      readOnly: !editable,
+      obscureText: obscure,
+      validator: (val) => val == null || val.isEmpty ? 'Enter $label' : null,
+      decoration: InputDecoration(
+        labelText: label,
+        border: const OutlineInputBorder(),
+      ),
+    );
+  }
+
+  Widget _gradientButton(String text, VoidCallback onPressed) {
+    return InkWell(
+      onTap: onPressed,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Colors.deepPurple, Colors.purpleAccent],
+          ),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Center(
+          child: Text(
+            text,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // --- Dashboard Tabs ---
+  Widget _buildBookingsTab(String? uid, {required bool buyer}) {
+    if (uid == null) return const Center(child: Text("User not logged in"));
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance.collection('services').snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting)
+            return const Center(child: CircularProgressIndicator());
+          if (!snapshot.hasData || snapshot.data!.docs.isEmpty)
+            return const Text("No data");
+          List<Widget> items = [];
+          for (var service in snapshot.data!.docs) {
+            final serviceId = service.id;
+            final serviceName = service['name'] ?? 'Service';
+            final requests = service.reference.collection('requests');
+            items.add(
+              StreamBuilder<QuerySnapshot>(
+                stream: buyer
+                    ? requests.where('userId', isEqualTo: uid).snapshots()
+                    : requests.snapshots(),
+                builder: (context, reqSnap) {
+                  if (!reqSnap.hasData || reqSnap.data!.docs.isEmpty) {
+                    if (!buyer)
+                      return Card(
+                        margin: const EdgeInsets.symmetric(vertical: 6),
+                        child: ListTile(
+                          title: Text(serviceName),
+                          subtitle: const Text("No bookings"),
+                        ),
+                      );
+                    return const SizedBox();
+                  }
+                  return Column(
+                    children: reqSnap.data!.docs.map((req) {
+                      final data = req.data() as Map<String, dynamic>;
+                      final status = data['status'] ?? 'pending';
+                      String dateText = "Booking Date N/A";
+                      if (data['bookingDate'] != null &&
+                          data['bookingDate'] is Timestamp) {
+                        dateText = (data['bookingDate'] as Timestamp)
+                            .toDate()
+                            .toLocal()
+                            .toString()
+                            .split(' ')[0];
+                      }
+                      return Card(
+                        margin: const EdgeInsets.symmetric(vertical: 6),
+                        child: ListTile(
+                          title: Text(
+                            buyer
+                                ? serviceName
+                                : (data['userName'] ?? 'Booking'),
+                          ),
+                          subtitle: Text(
+                            buyer ? dateText : "$serviceName | $dateText",
+                          ),
+                          trailing: _statusChip(status),
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => RequestDetailsPage(
+                                bookingId: req.id,
+                                serviceId: data['serviceId'] ?? serviceId,
+                                userId: data['userId'] ?? uid,
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  );
+                },
+              ),
+            );
+          }
+          return Column(children: items);
+        },
+      ),
+    );
+  }
+
+  Widget _buildServicesTab(String? uid) {
+    if (uid == null) return const Center(child: Text("User not logged in"));
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance
+            .collection('services')
+            .where('ownerId', isEqualTo: uid)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (!snapshot.hasData)
+            return const Center(child: CircularProgressIndicator());
+          if (snapshot.data!.docs.isEmpty)
+            return const Text("No services added");
+          return Column(
+            children: snapshot.data!.docs.map((service) {
+              final data = service.data() as Map<String, dynamic>;
+              return Card(
+                margin: const EdgeInsets.symmetric(vertical: 6),
+                child: ListTile(
+                  title: Text(data['name'] ?? 'Service'),
+                  subtitle: Text(data['description'] ?? ''),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.edit, color: Colors.deepPurple),
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => EditServicePage(
+                          serviceId: service.id,
+                          serviceData: data,
+                        ),
+                      ),
+                    ),
+                  ),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ServiceDetailsPage(serviceId: service.id),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          );
+        },
+      ),
     );
   }
 }

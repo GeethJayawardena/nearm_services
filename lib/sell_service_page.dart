@@ -128,7 +128,8 @@ class _SellServicePageState extends State<SellServicePage> {
       'description': _description,
       'priceMin': _priceMinValue,
       'priceMax': _priceMaxValue,
-      'district': _district,
+      'district': _district, // existing field
+      'location': _district, // new field for same district
       'latitude': _latitude,
       'longitude': _longitude,
       'timestamp': FieldValue.serverTimestamp(),
