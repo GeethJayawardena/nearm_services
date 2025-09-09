@@ -15,6 +15,7 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
   final _phoneController = TextEditingController();
   final _otpController = TextEditingController();
 
@@ -149,6 +150,7 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
     _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
     _phoneController.dispose();
     _otpController.dispose();
     super.dispose();
@@ -159,7 +161,6 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
     return Scaffold(
       body: Stack(
         children: [
-          // Gradient background
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
@@ -169,8 +170,6 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
               ),
             ),
           ),
-
-          // Back button
           Positioned(
             top: MediaQuery.of(context).padding.top + 10,
             left: 10,
@@ -179,7 +178,6 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
               onPressed: () => Navigator.pop(context),
             ),
           ),
-
           Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
@@ -245,9 +243,10 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
                           validator: (val) {
                             if (val == null || val.isEmpty)
                               return 'Enter email';
-                            if (!RegExp(
-                              r'^[\w-]+@([\w-]+\.)+[\w]{2,4}$',
-                            ).hasMatch(val))
+                            final emailRegex = RegExp(
+                              r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
+                            );
+                            if (!emailRegex.hasMatch(val))
                               return 'Enter valid email';
                             return null;
                           },
@@ -272,6 +271,29 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
                               return 'Enter password';
                             if (val.length < 6)
                               return 'Password must be at least 6 characters';
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Confirm Password
+                        TextFormField(
+                          controller: _confirmPasswordController,
+                          decoration: InputDecoration(
+                            labelText: 'Confirm Password',
+                            prefixIcon: const Icon(Icons.lock_outline),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            filled: true,
+                            fillColor: Colors.grey[100],
+                          ),
+                          obscureText: true,
+                          validator: (val) {
+                            if (val == null || val.isEmpty)
+                              return 'Confirm your password';
+                            if (val != _passwordController.text)
+                              return 'Passwords do not match';
                             return null;
                           },
                         ),

@@ -43,7 +43,6 @@ class _EmailLoginPageState extends State<EmailLoginPage> {
 
   void _showOtpNotification(String otp) {
     _otpOverlay?.remove();
-
     _otpOverlay = OverlayEntry(
       builder: (context) => Positioned(
         top: 60,
@@ -89,7 +88,6 @@ class _EmailLoginPageState extends State<EmailLoginPage> {
     );
 
     Overlay.of(context)?.insert(_otpOverlay!);
-
     Future.delayed(const Duration(seconds: 5), () {
       _otpOverlay?.remove();
       _otpOverlay = null;
@@ -129,7 +127,9 @@ class _EmailLoginPageState extends State<EmailLoginPage> {
         setState(() => _otpSent = true);
         _showOtpNotification(_generatedOtp!);
       } else {
-        _showMessage("⚠️ No phone number saved. Please create account first.");
+        _showMessage(
+          "⚠️ No phone number saved. Please create an account first.",
+        );
         await FirebaseAuth.instance.signOut();
         setState(() => _otpSent = false);
       }
@@ -242,8 +242,16 @@ class _EmailLoginPageState extends State<EmailLoginPage> {
                             fillColor: Colors.grey[100],
                           ),
                           keyboardType: TextInputType.emailAddress,
-                          validator: (val) =>
-                              val == null || val.isEmpty ? 'Enter email' : null,
+                          validator: (val) {
+                            if (val == null || val.isEmpty)
+                              return 'Enter email';
+                            final emailRegex = RegExp(
+                              r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
+                            );
+                            if (!emailRegex.hasMatch(val))
+                              return 'Enter valid email';
+                            return null;
+                          },
                         ),
                         const SizedBox(height: 16),
 
