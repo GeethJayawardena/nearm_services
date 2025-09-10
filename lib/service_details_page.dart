@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -77,6 +78,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
 
     _serviceData = serviceDoc.data();
     _ownerId = serviceDoc['ownerId'];
+
     // Load seller info from Firestore
     final sellerDoc = await FirebaseFirestore.instance
         .collection('users')
@@ -85,7 +87,17 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
 
     if (sellerDoc.exists) {
       _sellerData = sellerDoc.data();
+
+      // ✅ Convert local profileImage path to FileImage if exists
+      if (_sellerData!['profileImage'] != null &&
+          !_sellerData!['profileImage'].startsWith('http')) {
+        final file = File(_sellerData!['profileImage']);
+        if (await file.exists()) {
+          _sellerData!['profileImageFile'] = file;
+        }
+      }
     }
+
     final user = FirebaseAuth.instance.currentUser;
 
     if (user != null) {
@@ -93,6 +105,8 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
       await _loadActiveRequest(user.uid);
       await _loadReviews();
     }
+
+    setState(() {});
   }
 
   Future<void> _loadActiveRequest(String userId) async {
@@ -428,7 +442,8 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
     double endLat,
     double endLng,
   ) async {
-    const apiKey = 'YOUR_OPENROUTESERVICE_API_KEY';
+    const apiKey =
+        'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImIzNGNjNTEwZjNkOTQ3ZjZiZDQ0NmJmNGQ5NTg2ZTQ1IiwiaCI6Im11cm11cjY0In0=';
     final url =
         'https://api.openrouteservice.org/v2/directions/driving-car?api_key=$apiKey&start=$startLng,$startLat&end=$endLng,$endLat';
     try {
@@ -452,7 +467,8 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
     double endLat,
     double endLng,
   ) async {
-    const apiKey = 'YOUR_OPENROUTESERVICE_API_KEY';
+    const apiKey =
+        'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImIzNGNjNTEwZjNkOTQ3ZjZiZDQ0NmJmNGQ5NTg2ZTQ1IiwiaCI6Im11cm11cjY0In0=';
     final url =
         'https://api.openrouteservice.org/v2/directions/driving-car?api_key=$apiKey&start=$startLng,$startLat&end=$endLng,$endLat';
     try {
@@ -553,11 +569,14 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                 children: [
                   CircleAvatar(
                     radius: 30,
-                    backgroundImage: _sellerData!['profilePic'] != null
-                        ? NetworkImage(_sellerData!['profilePic'])
-                        : const AssetImage('assets/default_avatar.png')
-                              as ImageProvider,
+                    backgroundImage: _sellerData!['profileImageFile'] != null
+                        ? FileImage(_sellerData!['profileImageFile'] as File)
+                        : (_sellerData!['profilePic'] != null
+                              ? NetworkImage(_sellerData!['profilePic'])
+                              : const AssetImage('assets/default_avatar.png')
+                                    as ImageProvider),
                   ),
+
                   const SizedBox(width: 16),
                   Expanded(
                     child: Column(

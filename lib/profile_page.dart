@@ -143,14 +143,27 @@ class _ProfilePageState extends State<ProfilePage>
       );
       if (pickedFile == null) return;
 
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
       final dir = await getApplicationDocumentsDirectory();
-      final localImage = await File(
-        pickedFile.path,
-      ).copy('${dir.path}/profile.png');
+      final localImage = await File(pickedFile.path).copy(
+        '${dir.path}/${user.uid}.png', // <-- use user ID as filename
+      );
 
       setState(() {
         _profileImage = localImage;
+        _profileImageUrl = localImage.path;
       });
+
+      // Save path in Firestore
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'profileImage': localImage.path,
+      }, SetOptions(merge: true));
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Profile picture updated!")));
     } catch (e) {
       ScaffoldMessenger.of(
         context,
@@ -438,6 +451,7 @@ class _ProfilePageState extends State<ProfilePage>
                           ? const Icon(Icons.person, size: 50)
                           : null,
                     ),
+
                     if (_editingProfile)
                       Positioned(
                         bottom: 0,
