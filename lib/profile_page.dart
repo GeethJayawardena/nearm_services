@@ -608,17 +608,22 @@ class _ProfilePageState extends State<ProfilePage>
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance.collection('services').snapshots(),
+        stream: FirebaseFirestore.instance
+            .collection('services')
+            .where('ownerId', isEqualTo: buyer ? null : uid) // <-- fix here
+            .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting)
             return const Center(child: CircularProgressIndicator());
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty)
             return const Text("No data");
+
           List<Widget> items = [];
           for (var service in snapshot.data!.docs) {
             final serviceId = service.id;
             final serviceName = service['name'] ?? 'Service';
             final requests = service.reference.collection('requests');
+
             items.add(
               StreamBuilder<QuerySnapshot>(
                 stream: buyer
@@ -626,29 +631,14 @@ class _ProfilePageState extends State<ProfilePage>
                     : requests.snapshots(),
                 builder: (context, reqSnap) {
                   if (!reqSnap.hasData || reqSnap.data!.docs.isEmpty) {
-                    if (!buyer)
-                      return Card(
-                        margin: const EdgeInsets.symmetric(vertical: 6),
-                        child: ListTile(
-                          title: Text(serviceName),
-                          subtitle: const Text("No bookings"),
-                        ),
-                      );
                     return const SizedBox();
                   }
+
                   return Column(
                     children: reqSnap.data!.docs.map((req) {
                       final data = req.data() as Map<String, dynamic>;
                       final status = data['status'] ?? 'pending';
-                      String dateText = "Booking Date N/A";
-                      if (data['bookingDate'] != null &&
-                          data['bookingDate'] is Timestamp) {
-                        dateText = (data['bookingDate'] as Timestamp)
-                            .toDate()
-                            .toLocal()
-                            .toString()
-                            .split(' ')[0];
-                      }
+
                       return Card(
                         margin: const EdgeInsets.symmetric(vertical: 6),
                         child: ListTile(
@@ -658,19 +648,11 @@ class _ProfilePageState extends State<ProfilePage>
                                 : (data['userName'] ?? 'Booking'),
                           ),
                           subtitle: Text(
-                            buyer ? dateText : "$serviceName | $dateText",
+                            buyer
+                                ? "Booking ID: ${req.id}"
+                                : "$serviceName | Booking ID: ${req.id}",
                           ),
                           trailing: _statusChip(status),
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => RequestDetailsPage(
-                                bookingId: req.id,
-                                serviceId: data['serviceId'] ?? serviceId,
-                                userId: data['userId'] ?? uid,
-                              ),
-                            ),
-                          ),
                         ),
                       );
                     }).toList(),
