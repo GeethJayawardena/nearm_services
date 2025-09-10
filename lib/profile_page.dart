@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'request_details_page.dart';
 import 'service_details_page.dart';
 import 'edit_service_page.dart';
+import 'email_login_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -274,10 +275,17 @@ class _ProfilePageState extends State<ProfilePage>
       }
 
       await user.delete();
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Account deleted")));
-      Navigator.of(context).pushNamedAndRemoveUntil('/login', (_) => false);
+
+      // Show account deleted message
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("✅ Account deleted successfully")),
+      );
+
+      // Navigate safely to login page
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => EmailLoginPage()),
+        (route) => false,
+      );
     } catch (e) {
       ScaffoldMessenger.of(
         context,

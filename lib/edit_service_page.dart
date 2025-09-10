@@ -25,12 +25,21 @@ class _EditServicePageState extends State<EditServicePage> {
   late TextEditingController _priceMaxController;
 
   final List<String> _categories = [
-    "Plumbing",
-    "Cleaning",
-    "Tutoring",
-    "Mechanic (Bike/Car)",
-    "Electrical",
-    "Other",
+    'Electrician',
+    'Plumber',
+    'Carpenter',
+    'Cleaner / Housemaid',
+    'Cook / Home Chef',
+    'Babysitter / Nanny',
+    'Gardener',
+    'Mechanic (Bike/Car)',
+    'Washer / Laundry Helper',
+    'AC Repair Technician',
+    'Painter',
+    'Mason / Construction Helper',
+    'Pest Control',
+    'Delivery Helper',
+    'Elderly Caregiver',
   ];
 
   late String? _category;
