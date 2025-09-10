@@ -159,12 +159,30 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
       return;
     }
 
-    final requestRef = FirebaseFirestore.instance
+    final serviceRef = FirebaseFirestore.instance
         .collection('services')
         .doc(widget.serviceId)
-        .collection('requests')
-        .doc(); // auto-ID
+        .collection('requests');
 
+    // 🔍 Step 1: Check if this date is already booked
+    final existing = await serviceRef
+        .where('bookingDate', isEqualTo: Timestamp.fromDate(_selectedDate!))
+        .where(
+          'status',
+          whereIn: ['pending', 'price_proposed', 'buyer_agreed', 'completed'],
+        )
+        .get();
+
+    if (existing.docs.isNotEmpty) {
+      // 🔴 Seller already booked on this date
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Seller not available on this date")),
+      );
+      return;
+    }
+
+    // ✅ Step 2: Save booking request
+    final requestRef = serviceRef.doc(); // auto-ID
     await requestRef.set({
       'userId': user.uid,
       'userEmail': user.email,
