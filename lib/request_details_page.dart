@@ -106,6 +106,10 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
               }
             },
             child: const Text("Send"),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.deepPurple,
+              foregroundColor: Colors.white,
+            ),
           ),
         ],
       ),
@@ -198,115 +202,281 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
     final paymentStatus = requestData!['paymentStatus'];
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Booking Details')),
+      backgroundColor: Colors.grey.shade100,
+      appBar: AppBar(
+        title: const Text('Booking Details'),
+        backgroundColor: Colors.deepPurple,
+        elevation: 0,
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('User: ${userData!['name'] ?? 'N/A'}'),
-            Text('Email: ${userData!['email'] ?? 'N/A'}'),
-            const Divider(height: 32),
-            Text('Status: $status'),
-            if (proposedPrice != null && status != 'cancelled')
-              Text('Proposed Price: \$${proposedPrice.toString()}'),
-            const SizedBox(height: 16),
-
-            // Seller: propose price
-            if (isSeller && status == 'pending')
-              ElevatedButton(
-                onPressed: _showPriceDialog,
-                child: const Text("Propose Price"),
+            // --- User Info Card ---
+            Card(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
               ),
-
-            // Buyer: accept/reject price
-            if (!isSeller &&
-                status == 'price_proposed' &&
-                requestData!['buyerAgreed'] == null)
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => _buyerRespond(true),
-                      child: const Text('Accept'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
+              elevation: 4,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 30,
+                      backgroundColor: Colors.deepPurple.shade200,
+                      child: Text(
+                        (userData!['name'] ?? 'U')[0].toUpperCase(),
+                        style: const TextStyle(
+                          fontSize: 24,
+                          color: Colors.white,
+                        ),
                       ),
-                      onPressed: () => _buyerRespond(false),
-                      child: const Text('Reject'),
                     ),
-                  ),
-                ],
-              ),
-
-            // Buyer: cancelled
-            if (!isSeller && status == 'cancelled')
-              const Text(
-                'Booking cancelled',
-                style: TextStyle(
-                  color: Colors.red,
-                  fontWeight: FontWeight.bold,
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            userData!['name'] ?? 'N/A',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.deepPurple,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            userData!['email'] ?? 'N/A',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey.shade700,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
+            ),
+            const SizedBox(height: 20),
 
-            // Seller: complete job
-            if (isSeller && status == 'buyer_agreed')
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                onPressed: _completeJob,
-                child: const Text('Mark Job Completed'),
+            // --- Booking Info Card ---
+            Card(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
               ),
-
-            // Buyer: pay after job completed
-            if (!isSeller && status == 'completed' && paymentStatus != 'paid')
-              ElevatedButton(
-                onPressed: _goToBankPayment,
-                child: const Text('Pay Now'),
-              ),
-
-            // Buyer: submit review after payment
-            if (!isSeller && status == 'completed' && paymentStatus == 'paid')
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: reviewController,
-                    decoration: const InputDecoration(
-                      hintText: 'Write review...',
+              elevation: 4,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Status: $status',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: status == 'cancelled'
+                            ? Colors.red
+                            : Colors.green.shade700,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
+                    if (proposedPrice != null && status != 'cancelled')
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: Text(
+                          'Proposed Price: \$${proposedPrice.toString()}',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            color: Colors.deepPurple,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 12),
+
+                    // --- Action Buttons ---
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (isSeller && status == 'pending')
+                          ElevatedButton.icon(
+                            onPressed: _showPriceDialog,
+                            icon: const Icon(Icons.attach_money),
+                            label: const Text("Propose Price"),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.deepPurple,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        if (!isSeller &&
+                            status == 'price_proposed' &&
+                            requestData!['buyerAgreed'] == null)
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: () => _buyerRespond(true),
+                                  child: const Text('Accept'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.green.shade600,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 14,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: () => _buyerRespond(false),
+                                  child: const Text('Reject'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.red.shade600,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 14,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        if (isSeller && status == 'buyer_agreed')
+                          ElevatedButton.icon(
+                            onPressed: _completeJob,
+                            icon: const Icon(Icons.check_circle),
+                            label: const Text('Mark Job Completed'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green.shade700,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        if (!isSeller &&
+                            status == 'completed' &&
+                            paymentStatus != 'paid')
+                          ElevatedButton.icon(
+                            onPressed: _goToBankPayment,
+                            icon: const Icon(Icons.payment),
+                            label: const Text('Pay Now'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.deepPurple,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // --- Review Section ---
+            if (!isSeller && status == 'completed' && paymentStatus == 'paid')
+              Card(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                elevation: 4,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Rating:'),
-                      Slider(
-                        value: rating,
-                        min: 0,
-                        max: 5,
-                        divisions: 5,
-                        label: rating.toString(),
-                        onChanged: (val) => setState(() => rating = val),
+                      const Text(
+                        'Submit Review',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: reviewController,
+                        decoration: InputDecoration(
+                          hintText: 'Write your review...',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        maxLines: 3,
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          const Text('Rating:'),
+                          Expanded(
+                            child: Slider(
+                              value: rating,
+                              min: 0,
+                              max: 5,
+                              divisions: 5,
+                              label: rating.toString(),
+                              onChanged: (val) => setState(() => rating = val),
+                            ),
+                          ),
+                        ],
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: _submitReview,
+                        icon: const Icon(Icons.send),
+                        label: const Text('Submit Review'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.deepPurple,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
                       ),
                     ],
                   ),
-                  ElevatedButton(
-                    onPressed: _submitReview,
-                    child: const Text('Submit Review'),
-                  ),
-                ],
+                ),
               ),
+            const SizedBox(height: 20),
 
-            const SizedBox(height: 32),
+            // --- Chat Button ---
             Center(
               child: ElevatedButton.icon(
                 icon: const Icon(Icons.chat),
-                label: const Text('Chat'),
+                label: const Text('Chat with User'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.deepPurple,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 16,
+                    horizontal: 24,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
                 onPressed: () {
                   Navigator.push(
                     context,
@@ -320,6 +490,7 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
                 },
               ),
             ),
+            const SizedBox(height: 30),
           ],
         ),
       ),
@@ -351,11 +522,24 @@ class BankDetailsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Bank Details')),
+      backgroundColor: Colors.grey.shade100,
+      appBar: AppBar(
+        title: const Text('Bank Details'),
+        backgroundColor: Colors.deepPurple,
+      ),
       body: Center(
-        child: ElevatedButton(
+        child: ElevatedButton.icon(
           onPressed: () => _completePayment(context),
-          child: const Text('Pay \$100 (Sample Payment)'),
+          icon: const Icon(Icons.payment),
+          label: const Text('Pay \$100 (Sample Payment)'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.deepPurple,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
         ),
       ),
     );

@@ -472,6 +472,7 @@ class _HomePageState extends State<HomePage> {
                         ),
                         const SizedBox(height: 6),
                         AverageRatingLine(serviceId: doc.id),
+                        LatestReviewLine(serviceId: doc.id),
                       ],
                     ),
                   ),
@@ -527,6 +528,7 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
+/// ✅ Show average star rating live
 class AverageRatingLine extends StatelessWidget {
   final String serviceId;
   const AverageRatingLine({super.key, required this.serviceId});
@@ -536,24 +538,79 @@ class AverageRatingLine extends StatelessWidget {
     final ratingsRef = FirebaseFirestore.instance
         .collection('services')
         .doc(serviceId)
-        .collection('ratings');
+        .collection('reviews');
 
     return StreamBuilder<QuerySnapshot>(
       stream: ratingsRef.snapshots(),
       builder: (context, snap) {
-        if (!snap.hasData) return const Text('⭐ No ratings yet');
-        final docs = snap.data!.docs;
-        if (docs.isEmpty) return const Text('⭐ No ratings yet');
+        if (!snap.hasData || snap.data!.docs.isEmpty) {
+          return const Text('⭐ No ratings yet');
+        }
 
+        final docs = snap.data!.docs;
         double sum = 0;
         for (final d in docs) {
           final m = d.data() as Map<String, dynamic>;
           sum += (m['rating'] ?? 0).toDouble();
         }
         final avg = sum / docs.length;
+
+        return Row(
+          children: [
+            ...List.generate(
+              5,
+              (i) => Icon(
+                i < avg.round() ? Icons.star : Icons.star_border,
+                color: Colors.amber,
+                size: 18,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              avg.toStringAsFixed(1),
+              style: const TextStyle(color: Colors.deepPurple),
+            ),
+            Text(" (${docs.length})"),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// ✅ Show latest review comment live
+class LatestReviewLine extends StatelessWidget {
+  final String serviceId;
+  const LatestReviewLine({super.key, required this.serviceId});
+
+  @override
+  Widget build(BuildContext context) {
+    final reviewsRef = FirebaseFirestore.instance
+        .collection('services')
+        .doc(serviceId)
+        .collection('reviews')
+        .orderBy('timestamp', descending: true)
+        .limit(1);
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: reviewsRef.snapshots(),
+      builder: (context, snap) {
+        if (!snap.hasData || snap.data!.docs.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        final doc = snap.data!.docs.first;
+        final data = doc.data() as Map<String, dynamic>;
+        final comment = data['comment'] ?? '';
+
+        if (comment.isEmpty) return const SizedBox.shrink();
+
         return Text(
-          '⭐ ${avg.toStringAsFixed(1)} (${docs.length})',
-          style: const TextStyle(color: Colors.deepPurple),
+          "\"$comment\"",
+          style: const TextStyle(
+            fontStyle: FontStyle.italic,
+            color: Colors.black87,
+          ),
         );
       },
     );

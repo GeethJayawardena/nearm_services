@@ -21,12 +21,15 @@ class ServiceDetailsPage extends StatefulWidget {
 class _ServiceDetailsPageState extends State<ServiceDetailsPage>
     with RouteAware {
   Map<String, dynamic>? _requestData;
+  Map<String, dynamic>? _sellerData;
   bool _isSeller = false;
   String? _ownerId;
   DateTime? _selectedDate;
   Map<String, dynamic>? _serviceData;
   List<Map<String, dynamic>> _reviews = [];
   final TextEditingController _priceController = TextEditingController();
+  final TextEditingController _reviewController = TextEditingController();
+  int _selectedRating = 0;
   final MapController _mapController = MapController();
   double _mapZoom = 15.0;
 
@@ -55,6 +58,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
   void dispose() {
     routeObserver.unsubscribe(this);
     _priceController.dispose();
+    _reviewController.dispose();
     super.dispose();
   }
 
@@ -73,6 +77,15 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
 
     _serviceData = serviceDoc.data();
     _ownerId = serviceDoc['ownerId'];
+    // Load seller info from Firestore
+    final sellerDoc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(_ownerId)
+        .get();
+
+    if (sellerDoc.exists) {
+      _sellerData = sellerDoc.data();
+    }
     final user = FirebaseAuth.instance.currentUser;
 
     if (user != null) {
@@ -174,7 +187,6 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
         .get();
 
     if (existing.docs.isNotEmpty) {
-      // 🔴 Seller already booked on this date
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Seller not available on this date")),
       );
@@ -182,7 +194,9 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
     }
 
     // ✅ Step 2: Save booking request
-    final requestRef = serviceRef.doc(); // auto-ID
+    final requestRef = serviceRef.doc(
+      user.uid,
+    ); // Use user ID to prevent duplicates
     await requestRef.set({
       'userId': user.uid,
       'userEmail': user.email,
@@ -280,6 +294,50 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
     setState(() => _requestData!['status'] = 'completed');
   }
 
+  Future<void> _submitReview() async {
+    if (_reviewController.text.trim().isEmpty || _selectedRating == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please add a rating and comment')),
+      );
+      return;
+    }
+
+    final user = FirebaseAuth.instance.currentUser!;
+    final reviewData = {
+      'rating': _selectedRating,
+      'comment': _reviewController.text.trim(),
+      'userId': user.uid,
+      'userName': user.displayName ?? user.email,
+      'timestamp': FieldValue.serverTimestamp(),
+    };
+
+    // 1️⃣ Save inside requests for buyer tracking
+    await FirebaseFirestore.instance
+        .collection('services')
+        .doc(widget.serviceId)
+        .collection('requests')
+        .doc(user.uid)
+        .update({'buyerReview': reviewData});
+
+    // 2️⃣ Save in separate 'reviews' collection for easy HomePage queries
+    await FirebaseFirestore.instance
+        .collection('services')
+        .doc(widget.serviceId)
+        .collection('reviews')
+        .add(reviewData);
+
+    setState(() {
+      _requestData!['buyerReview'] = reviewData;
+      _reviews.add(reviewData);
+      _reviewController.clear();
+      _selectedRating = 0;
+    });
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Review submitted!')));
+  }
+
   void _payNow() {
     Navigator.push(
       context,
@@ -370,8 +428,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
     double endLat,
     double endLng,
   ) async {
-    const apiKey =
-        'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImIzNGNjNTEwZjNkOTQ3ZjZiZDQ0NmJmNGQ5NTg2ZTQ1IiwiaCI6Im11cm11cjY0In0=';
+    const apiKey = 'YOUR_OPENROUTESERVICE_API_KEY';
     final url =
         'https://api.openrouteservice.org/v2/directions/driving-car?api_key=$apiKey&start=$startLng,$startLat&end=$endLng,$endLat';
     try {
@@ -395,8 +452,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
     double endLat,
     double endLng,
   ) async {
-    const apiKey =
-        'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImIzNGNjNTEwZjNkOTQ3ZjZiZDQ0NmJmNGQ5NTg2ZTQ1IiwiaCI6Im11cm11cjY0In0=';
+    const apiKey = 'YOUR_OPENROUTESERVICE_API_KEY';
     final url =
         'https://api.openrouteservice.org/v2/directions/driving-car?api_key=$apiKey&start=$startLng,$startLat&end=$endLng,$endLat';
     try {
@@ -478,6 +534,60 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
               ],
             ),
           ),
+          if (_sellerData != null)
+            Container(
+              padding: const EdgeInsets.all(16),
+              margin: const EdgeInsets.only(top: 16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black12,
+                    blurRadius: 10,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 30,
+                    backgroundImage: _sellerData!['profilePic'] != null
+                        ? NetworkImage(_sellerData!['profilePic'])
+                        : const AssetImage('assets/default_avatar.png')
+                              as ImageProvider,
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _sellerData!['name'] ?? 'Seller Name',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.deepPurple,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _sellerData!['email'] ?? 'Seller Email',
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _sellerData!['contact'] ??
+                              'Contact number not available',
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
 
           const SizedBox(height: 16),
 
@@ -587,7 +697,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                         : "Booking Date: ${_selectedDate!.toLocal()}".split(
                             ' ',
                           )[0],
-                    style: const TextStyle(fontSize: 16),
+                    style: const TextStyle(fontSize: 16, color: Colors.white),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -605,7 +715,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                   ),
                   child: const Text(
                     'Request Booking',
-                    style: TextStyle(fontSize: 16),
+                    style: TextStyle(fontSize: 16, color: Colors.white),
                   ),
                 ),
               ],
@@ -687,7 +797,59 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                     child: const Text('Mark Job Completed'),
                   ),
 
-                if (!_isSeller && _requestData!['status'] == 'completed')
+                if (!_isSeller &&
+                    _requestData!['status'] == 'completed' &&
+                    _requestData!['buyerReview'] == null)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Leave a Review',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: List.generate(5, (index) {
+                          return IconButton(
+                            icon: Icon(
+                              index < _selectedRating
+                                  ? Icons.star
+                                  : Icons.star_border,
+                              color: Colors.amber,
+                            ),
+                            onPressed: () {
+                              setState(() => _selectedRating = index + 1);
+                            },
+                          );
+                        }),
+                      ),
+                      TextField(
+                        controller: _reviewController,
+                        maxLines: 3,
+                        decoration: const InputDecoration(
+                          hintText: 'Write your review here',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      ElevatedButton(
+                        onPressed: _submitReview,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.deepPurple,
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('Submit Review'),
+                      ),
+                    ],
+                  ),
+
+                if (!_isSeller &&
+                    _requestData!['status'] == 'completed' &&
+                    _requestData!['buyerReview'] != null)
                   ElevatedButton(
                     onPressed: _payNow,
                     style: ElevatedButton.styleFrom(
