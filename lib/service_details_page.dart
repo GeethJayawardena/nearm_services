@@ -44,9 +44,8 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
   @override
   void initState() {
     super.initState();
-    _loadServiceData().then((_) {
-      if (_serviceData != null) _getLocationAndDistance();
-    });
+    // Load service + seller data. DO NOT auto-fetch buyer location here.
+    _loadServiceData();
   }
 
   @override
@@ -88,13 +87,19 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
     if (sellerDoc.exists) {
       _sellerData = sellerDoc.data();
 
-      // ✅ Convert local profileImage path to FileImage if exists
-      if (_sellerData!['profileImage'] != null &&
-          !_sellerData!['profileImage'].startsWith('http')) {
-        final file = File(_sellerData!['profileImage']);
-        if (await file.exists()) {
-          _sellerData!['profileImageFile'] = file;
+      // Convert local profileImage path to File if exists
+      try {
+        if (_sellerData != null &&
+            _sellerData!['profileImage'] != null &&
+            !_sellerData!['profileImage'].toString().startsWith('http')) {
+          final path = _sellerData!['profileImage'].toString();
+          final file = File(path);
+          if (await file.exists()) {
+            _sellerData!['profileImageFile'] = file;
+          }
         }
+      } catch (e) {
+        // ignore file read errors
       }
     }
 
@@ -106,7 +111,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
       await _loadReviews();
     }
 
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   Future<void> _cancelBooking() async {
@@ -217,7 +222,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
         .doc(widget.serviceId)
         .collection('requests');
 
-    // 🔍 Step 1: Check if this date is already booked
+    // Check if this date is already booked
     final existing = await serviceRef
         .where('bookingDate', isEqualTo: Timestamp.fromDate(_selectedDate!))
         .where(
@@ -233,10 +238,8 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
       return;
     }
 
-    // ✅ Step 2: Save booking request
-    final requestRef = serviceRef.doc(
-      user.uid,
-    ); // Use user ID to prevent duplicates
+    // Save booking request (use user id as doc id to avoid duplicates)
+    final requestRef = serviceRef.doc(user.uid);
     await requestRef.set({
       'userId': user.uid,
       'userEmail': user.email,
@@ -351,7 +354,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
       'timestamp': FieldValue.serverTimestamp(),
     };
 
-    // 1️⃣ Save inside requests for buyer tracking
+    // 1) Save inside requests for buyer tracking
     await FirebaseFirestore.instance
         .collection('services')
         .doc(widget.serviceId)
@@ -359,7 +362,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
         .doc(user.uid)
         .update({'buyerReview': reviewData});
 
-    // 2️⃣ Save in separate 'reviews' collection for easy HomePage queries
+    // 2) Save in separate 'reviews' collection for easy HomePage queries
     await FirebaseFirestore.instance
         .collection('services')
         .doc(widget.serviceId)
@@ -419,15 +422,49 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
     }
   }
 
-  Future<void> _getLocationAndDistance() async {
+  /// Called when user presses "My Location".
+  /// This captures buyer location locally (NOT saved to Firestore),
+  /// computes route & distance to seller, and updates the map.
+  Future<void> _captureBuyerLocation() async {
     setState(() => _loadingDistance = true);
     try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Location services are disabled')),
+        );
+        return;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location permission denied')),
+          );
+          return;
+        }
+      }
+      if (permission == LocationPermission.deniedForever) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Location permissions are permanently denied. Please enable them in settings.',
+            ),
+          ),
+        );
+        return;
+      }
+
       final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
+
       _userLat = pos.latitude;
       _userLng = pos.longitude;
 
+      // Compute route & distance (using OpenRouteService)
       if (_serviceData != null) {
         final route = await _getRoadRoute(
           _userLat!,
@@ -438,27 +475,37 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
 
         if (route != null && route.isNotEmpty) {
           _routePoints = route;
-          final distanceMeters = await _getRoadDistance(
+          final distanceKm = await _getRoadDistance(
             _userLat!,
             _userLng!,
             _serviceData!['latitude'],
             _serviceData!['longitude'],
           );
-          setState(() => _roadDistanceKm = distanceMeters);
+          setState(() => _roadDistanceKm = distanceKm);
+        } else {
+          // fallback: draw straight line between the two points
+          _routePoints = [
+            LatLng(_userLat!, _userLng!),
+            LatLng(_serviceData!['latitude'], _serviceData!['longitude']),
+          ];
         }
 
+        // Move center to midpoint of buyer & seller for better view
         final center = LatLng(
           (_userLat! + _serviceData!['latitude']) / 2,
           (_userLng! + _serviceData!['longitude']) / 2,
         );
         _mapController.move(center, 12);
+      } else {
+        // If no service data, center on buyer only
+        _mapController.move(LatLng(_userLat!, _userLng!), 14);
       }
     } catch (e) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Failed: $e')));
+      ).showSnackBar(SnackBar(content: Text('Failed to get location: $e')));
     } finally {
-      setState(() => _loadingDistance = false);
+      if (mounted) setState(() => _loadingDistance = false);
     }
   }
 
@@ -482,7 +529,8 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
       }
       return null;
     } catch (e) {
-      print('Error fetching road distance: $e');
+      // ignore or log
+      debugPrint('Error fetching road distance: $e');
       return null;
     }
   }
@@ -506,7 +554,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
       }
       return null;
     } catch (e) {
-      print('Error fetching road route: $e');
+      debugPrint('Error fetching road route: $e');
       return null;
     }
   }
@@ -576,6 +624,8 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
               ],
             ),
           ),
+
+          // Seller Info Card
           if (_sellerData != null)
             Container(
               padding: const EdgeInsets.all(16),
@@ -646,9 +696,16 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                   FlutterMap(
                     mapController: _mapController,
                     options: MapOptions(
-                      onPositionChanged: (pos, _) =>
-                          _mapZoom = pos.zoom ?? _mapZoom,
+                      initialCenter: LatLng(
+                        _serviceData!['latitude'],
+                        _serviceData!['longitude'],
+                      ),
+                      initialZoom: _mapZoom,
+                      onPositionChanged: (pos, _) {
+                        _mapZoom = pos.zoom ?? _mapZoom;
+                      },
                     ),
+
                     children: [
                       TileLayer(
                         urlTemplate:
@@ -657,6 +714,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                       ),
                       MarkerLayer(
                         markers: [
+                          // Seller marker (red) - ALWAYS visible
                           Marker(
                             point: LatLng(
                               _serviceData!['latitude'],
@@ -670,6 +728,8 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                               size: 40,
                             ),
                           ),
+
+                          // Buyer marker (blue) - only visible after pressing "My Location"
                           if (_userLat != null && _userLng != null)
                             Marker(
                               point: LatLng(_userLat!, _userLng!),
@@ -695,6 +755,8 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                         ),
                     ],
                   ),
+
+                  // Zoom control buttons
                   Positioned(
                     top: 8,
                     right: 8,
@@ -712,6 +774,28 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                           child: const Icon(Icons.remove),
                         ),
                       ],
+                    ),
+                  ),
+
+                  // My Location button (bottom-right)
+                  Positioned(
+                    bottom: 8,
+                    right: 8,
+                    child: FloatingActionButton.extended(
+                      onPressed: _loadingDistance
+                          ? null
+                          : _captureBuyerLocation,
+                      icon: _loadingDistance
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Icon(Icons.my_location),
+                      label: const Text('My Location'),
                     ),
                   ),
                 ],
