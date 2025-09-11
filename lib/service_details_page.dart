@@ -109,6 +109,32 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
     setState(() {});
   }
 
+  Future<void> _cancelBooking() async {
+    if (_requestData == null) return;
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final userId = _requestData!['userId'];
+
+    // Update Firestore
+    await FirebaseFirestore.instance
+        .collection('services')
+        .doc(widget.serviceId)
+        .collection('requests')
+        .doc(userId)
+        .update({'status': 'cancelled'});
+
+    // Update local state to hide the request
+    setState(() {
+      _requestData = null;
+    });
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Booking cancelled')));
+  }
+
   Future<void> _loadActiveRequest(String userId) async {
     Map<String, dynamic>? activeRequest;
 
@@ -756,6 +782,15 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                   label: const Text('Chat'),
                 ),
                 const SizedBox(height: 12),
+                // Only for buyers and pending requests
+                if (!_isSeller && _requestData!['status'] == 'pending')
+                  ElevatedButton(
+                    onPressed: _cancelBooking,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                    ),
+                    child: const Text('Cancel Booking'),
+                  ),
 
                 if (_isSeller &&
                     _requestData!['status'] == 'pending' &&
