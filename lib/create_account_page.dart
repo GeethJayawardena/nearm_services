@@ -243,11 +243,22 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
                           validator: (val) {
                             if (val == null || val.isEmpty)
                               return 'Enter email';
+
                             final emailRegex = RegExp(
                               r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
                             );
                             if (!emailRegex.hasMatch(val))
                               return 'Enter valid email';
+
+                            final blockedDomains = [
+                              'gmail.com',
+                              'yahoo.com',
+                              'hotmail.com',
+                            ];
+                            final domain = val.split('@').last.toLowerCase();
+                            if (blockedDomains.contains(domain))
+                              return 'Email domain not allowed';
+
                             return null;
                           },
                         ),
@@ -345,8 +356,10 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
                                 validator: (val) {
                                   if (val == null || val.isEmpty)
                                     return 'Enter phone number';
-                                  if (!RegExp(r'^[0-9]{7,13}$').hasMatch(val))
-                                    return 'Enter valid phone';
+
+                                  if (!RegExp(r'^7\d{8}$').hasMatch(val))
+                                    return 'Phone Number is invalid';
+
                                   return null;
                                 },
                               ),
@@ -399,7 +412,10 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
                                   )
                                 : Text(
                                     _otpSent ? 'Create Account' : 'Send OTP',
-                                    style: const TextStyle(fontSize: 16),
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      color: Colors.white,
+                                    ),
                                   ),
                           ),
                         ),
