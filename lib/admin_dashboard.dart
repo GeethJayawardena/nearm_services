@@ -75,6 +75,34 @@ class _AdminDashboardState extends State<AdminDashboard>
     });
   }
 
+  Future<void> _deleteAdmin(String adminId) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Delete Admin"),
+        content: const Text("Are you sure you want to delete this admin?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text("Delete"),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      // delete admin document
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(adminId)
+          .delete();
+    }
+  }
+
   Widget _buildUsersTab() {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
@@ -134,12 +162,14 @@ class _AdminDashboardState extends State<AdminDashboard>
                 .where('role', isEqualTo: 'admin')
                 .snapshots(),
             builder: (context, snapshot) {
-              if (!snapshot.hasData)
+              if (!snapshot.hasData) {
                 return const Center(child: CircularProgressIndicator());
+              }
 
               final admins = snapshot.data!.docs;
-              if (admins.isEmpty)
+              if (admins.isEmpty) {
                 return const Center(child: Text("No admins found."));
+              }
 
               return ListView.builder(
                 padding: const EdgeInsets.all(8),
@@ -167,10 +197,19 @@ class _AdminDashboardState extends State<AdminDashboard>
                             Text('Phone: ${data['phone']}'),
                         ],
                       ),
-                      trailing: Chip(
-                        label: const Text('Admin'),
-                        backgroundColor: Colors.red,
-                        labelStyle: const TextStyle(color: Colors.white),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Chip(
+                            label: const Text('Admin'),
+                            backgroundColor: Colors.red,
+                            labelStyle: const TextStyle(color: Colors.white),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            onPressed: () => _deleteAdmin(admin.id),
+                          ),
+                        ],
                       ),
                     ),
                   );
