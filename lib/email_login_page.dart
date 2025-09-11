@@ -187,7 +187,6 @@ class _EmailLoginPageState extends State<EmailLoginPage> {
               ),
             ),
           ),
-
           // Back button
           Positioned(
             top: MediaQuery.of(context).padding.top + 10,
@@ -197,7 +196,6 @@ class _EmailLoginPageState extends State<EmailLoginPage> {
               onPressed: () => Navigator.pop(context),
             ),
           ),
-
           Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
@@ -245,11 +243,29 @@ class _EmailLoginPageState extends State<EmailLoginPage> {
                           validator: (val) {
                             if (val == null || val.isEmpty)
                               return 'Enter email';
-                            final emailRegex = RegExp(
-                              r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
-                            );
-                            if (!emailRegex.hasMatch(val))
+
+                            final emailParts = val.split('@');
+                            if (emailParts.length != 2)
                               return 'Enter valid email';
+
+                            final localPart = emailParts[0];
+                            final domainPart = emailParts[1];
+
+                            // Only allow lowercase domain
+                            final allowedDomains = [
+                              'gmail.com',
+                              'yahoo.com',
+                              'hotmail.com',
+                            ];
+                            if (!allowedDomains.contains(domainPart)) {
+                              return 'Enter valid email';
+                            }
+
+                            // Local part can have lowercase letters, numbers, and special chars
+                            final localRegex = RegExp(r'^[a-z0-9._%+-]+$');
+                            if (!localRegex.hasMatch(localPart))
+                              return 'Invalid email format';
+
                             return null;
                           },
                         ),
@@ -274,7 +290,7 @@ class _EmailLoginPageState extends State<EmailLoginPage> {
                         ),
                         const SizedBox(height: 16),
 
-                        // Phone input
+                        // Phone + Country code
                         if (!_otpSent)
                           Row(
                             children: [
@@ -320,9 +336,9 @@ class _EmailLoginPageState extends State<EmailLoginPage> {
                                   keyboardType: TextInputType.phone,
                                   validator: (val) {
                                     if (val == null || val.isEmpty)
-                                      return 'Enter phone';
-                                    if (!RegExp(r'^[0-9]{7,13}$').hasMatch(val))
-                                      return 'Enter valid phone';
+                                      return 'Enter phone number';
+                                    if (!RegExp(r'^7\d{8}$').hasMatch(val))
+                                      return 'Enter valid phone number';
                                     return null;
                                   },
                                 ),

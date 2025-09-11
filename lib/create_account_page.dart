@@ -15,7 +15,6 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _confirmPasswordController = TextEditingController();
   final _phoneController = TextEditingController();
   final _otpController = TextEditingController();
 
@@ -87,8 +86,18 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
   }
 
   Future<void> _sendOtp() async {
-    if (_phoneController.text.isEmpty) {
-      _showMessage('Enter phone number first');
+    final email = _emailController.text.trim();
+    final phone = _phoneController.text.trim();
+
+    if (!RegExp(
+      r'^[a-z0-9._%+-]+@(gmail\.com|yahoo\.com|hotmail\.com)$',
+    ).hasMatch(email)) {
+      _showMessage('Enter valid email');
+      return;
+    }
+
+    if (!RegExp(r'^7\d{8}$').hasMatch(phone)) {
+      _showMessage('Enter valid phone number');
       return;
     }
 
@@ -150,7 +159,6 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
     _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
-    _confirmPasswordController.dispose();
     _phoneController.dispose();
     _otpController.dispose();
     super.dispose();
@@ -161,6 +169,7 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
     return Scaffold(
       body: Stack(
         children: [
+          // Gradient background
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
@@ -170,6 +179,7 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
               ),
             ),
           ),
+          // Back button
           Positioned(
             top: MediaQuery.of(context).padding.top + 10,
             left: 10,
@@ -208,7 +218,6 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
                           style: TextStyle(fontSize: 16, color: Colors.black54),
                         ),
                         const SizedBox(height: 32),
-
                         // Name
                         TextFormField(
                           controller: _nameController,
@@ -226,7 +235,6 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
                               : null,
                         ),
                         const SizedBox(height: 16),
-
                         // Email
                         TextFormField(
                           controller: _emailController,
@@ -243,27 +251,16 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
                           validator: (val) {
                             if (val == null || val.isEmpty)
                               return 'Enter email';
-
-                            final emailRegex = RegExp(
-                              r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$",
+                            final regex = RegExp(
+                              r'^[a-z0-9._%+-]+@(gmail\.com|yahoo\.com|hotmail\.com)$',
                             );
-                            if (!emailRegex.hasMatch(val))
-                              return 'Enter valid email';
-
-                            final blockedDomains = [
-                              'gmail.com',
-                              'yahoo.com',
-                              'hotmail.com',
-                            ];
-                            final domain = val.split('@').last.toLowerCase();
-                            if (blockedDomains.contains(domain))
-                              return 'Email domain not allowed';
-
+                            if (!regex.hasMatch(val)) {
+                              return 'Email must be lowercase and from gmail.com, yahoo.com, or hotmail.com';
+                            }
                             return null;
                           },
                         ),
                         const SizedBox(height: 16),
-
                         // Password
                         TextFormField(
                           controller: _passwordController,
@@ -286,30 +283,6 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
                           },
                         ),
                         const SizedBox(height: 16),
-
-                        // Confirm Password
-                        TextFormField(
-                          controller: _confirmPasswordController,
-                          decoration: InputDecoration(
-                            labelText: 'Confirm Password',
-                            prefixIcon: const Icon(Icons.lock_outline),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            filled: true,
-                            fillColor: Colors.grey[100],
-                          ),
-                          obscureText: true,
-                          validator: (val) {
-                            if (val == null || val.isEmpty)
-                              return 'Confirm your password';
-                            if (val != _passwordController.text)
-                              return 'Passwords do not match';
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 16),
-
                         // Phone + Country Code
                         Row(
                           children: [
@@ -356,10 +329,8 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
                                 validator: (val) {
                                   if (val == null || val.isEmpty)
                                     return 'Enter phone number';
-
                                   if (!RegExp(r'^7\d{8}$').hasMatch(val))
-                                    return 'Phone Number is invalid';
-
+                                    return 'Phone must start with 7 and be 9 digits';
                                   return null;
                                 },
                               ),
@@ -367,7 +338,6 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
                           ],
                         ),
                         const SizedBox(height: 16),
-
                         // OTP
                         if (_otpSent)
                           Column(
@@ -391,7 +361,6 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
                             ],
                           ),
                         const SizedBox(height: 16),
-
                         // Send OTP / Create Account button
                         SizedBox(
                           width: double.infinity,
@@ -420,7 +389,6 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
                           ),
                         ),
                         const SizedBox(height: 12),
-
                         TextButton(
                           onPressed: () => Navigator.pushReplacementNamed(
                             context,
