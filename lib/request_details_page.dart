@@ -464,19 +464,8 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
             // --- Chat Button ---
             Center(
               child: ElevatedButton.icon(
-                icon: const Icon(Icons.chat),
+                icon: const Icon(Icons.chat, key: ValueKey('chat_icon')),
                 label: const Text('Chat with User'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.deepPurple,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 16,
-                    horizontal: 24,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                ),
                 onPressed: () {
                   Navigator.push(
                     context,
@@ -485,6 +474,8 @@ class _RequestDetailsPageState extends State<RequestDetailsPage> {
                         serviceId: widget.serviceId,
                         otherUserId: widget.userId,
                       ),
+                      fullscreenDialog:
+                          true, // optional: also prevents hero conflicts
                     ),
                   );
                 },

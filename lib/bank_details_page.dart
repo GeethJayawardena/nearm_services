@@ -40,20 +40,30 @@ class _BankDetailsPageState extends State<BankDetailsPage> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    await FirebaseFirestore.instance
-        .collection('services')
-        .doc(widget.serviceId)
-        .collection('requests')
-        .doc(user.uid)
-        .update({'paymentStatus': 'paid', 'status': 'done'});
+    try {
+      // Update Firestore with paymentStatus
+      await FirebaseFirestore.instance
+          .collection('services')
+          .doc(widget.serviceId)
+          .collection('requests')
+          .doc(user.uid)
+          .update({'paymentStatus': 'paid'});
 
-    setState(() {
-      _paid = true;
-    });
+      setState(() {
+        _paid = true;
+      });
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Payment done!')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Payment successful!')));
+
+      // Return true to previous page
+      Navigator.pop(context, true);
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Payment failed: $e')));
+    }
   }
 
   @override
@@ -72,7 +82,7 @@ class _BankDetailsPageState extends State<BankDetailsPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // --- Bank Details Card ---
+                  // Bank Details Card
                   SizedBox(
                     width: double.infinity,
                     child: Card(
@@ -140,7 +150,7 @@ class _BankDetailsPageState extends State<BankDetailsPage> {
                   ),
                   const SizedBox(height: 30),
 
-                  // --- Pay Button ---
+                  // Pay Button
                   if (!_paid)
                     Center(
                       child: ElevatedButton.icon(
@@ -161,7 +171,7 @@ class _BankDetailsPageState extends State<BankDetailsPage> {
                       ),
                     ),
 
-                  // --- After Payment Message ---
+                  // After Payment Message
                   if (_paid)
                     Center(
                       child: Container(

@@ -107,7 +107,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
 
     if (user != null) {
       _isSeller = user.uid == _ownerId;
-      await _loadActiveRequest(user.uid);
+      await _loadActiveRequest();
       await _loadReviews();
     }
 
@@ -140,40 +140,67 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
     ).showSnackBar(const SnackBar(content: Text('Booking cancelled')));
   }
 
-  Future<void> _loadActiveRequest(String userId) async {
+  // ------------------ Firestore-safe: Load active request ------------------
+  Future<void> _loadActiveRequest() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || _ownerId == null) return;
+
     Map<String, dynamic>? activeRequest;
 
-    if (_isSeller) {
-      final requestsSnap = await FirebaseFirestore.instance
-          .collection('services')
-          .doc(widget.serviceId)
-          .collection('requests')
-          .get();
-      if (requestsSnap.docs.isNotEmpty)
-        activeRequest = requestsSnap.docs.first.data();
-    } else {
-      final doc = await FirebaseFirestore.instance
-          .collection('services')
-          .doc(widget.serviceId)
-          .collection('requests')
-          .doc(userId)
-          .get();
-      if (doc.exists) {
-        final status = doc['status'] ?? 'pending';
-        if (status != 'done' && status != 'cancelled')
-          activeRequest = doc.data();
-      }
-    }
+    try {
+      if (_isSeller) {
+        // Seller: load any active request
+        final requestsSnap = await FirebaseFirestore.instance
+            .collection('services')
+            .doc(widget.serviceId)
+            .collection('requests')
+            .where(
+              'status',
+              whereIn: [
+                'pending',
+                'price_proposed',
+                'buyer_agreed',
+                'completed',
+              ],
+            )
+            .limit(1)
+            .get();
 
-    setState(() {
-      _requestData = activeRequest;
-      if (_selectedDate == null &&
-          _requestData != null &&
-          _requestData!['bookingDate'] != null) {
-        final bd = _requestData!['bookingDate'];
-        _selectedDate = bd is Timestamp ? bd.toDate() : bd as DateTime?;
+        if (requestsSnap.docs.isNotEmpty) {
+          activeRequest = requestsSnap.docs.first.data();
+        }
+      } else {
+        // Buyer: load their own request, including completed for payment/review
+        final doc = await FirebaseFirestore.instance
+            .collection('services')
+            .doc(widget.serviceId)
+            .collection('requests')
+            .doc(user.uid)
+            .get();
+
+        if (doc.exists) {
+          final status = doc['status'] ?? 'pending';
+          if (status != 'cancelled') {
+            // only skip cancelled
+            activeRequest = doc.data();
+          }
+        }
       }
-    });
+
+      setState(() {
+        _requestData = activeRequest;
+
+        // Update selected booking date if exists
+        if (_selectedDate == null &&
+            _requestData != null &&
+            _requestData!['bookingDate'] != null) {
+          final bd = _requestData!['bookingDate'];
+          _selectedDate = bd is Timestamp ? bd.toDate() : bd as DateTime?;
+        }
+      });
+    } catch (e) {
+      debugPrint('Failed to load active request: $e');
+    }
   }
 
   Future<void> _loadReviews() async {
@@ -208,6 +235,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
     if (picked != null) setState(() => _selectedDate = picked);
   }
 
+  // ------------------ Firestore-safe: Request Booking ------------------
   Future<void> _requestBooking() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || _ownerId == null || _selectedDate == null) {
@@ -217,56 +245,69 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
       return;
     }
 
-    final serviceRef = FirebaseFirestore.instance
-        .collection('services')
-        .doc(widget.serviceId)
-        .collection('requests');
+    try {
+      final requestRef = FirebaseFirestore.instance
+          .collection('services')
+          .doc(widget.serviceId)
+          .collection('requests')
+          .doc(user.uid);
 
-    // Check if this date is already booked
-    final existing = await serviceRef
-        .where('bookingDate', isEqualTo: Timestamp.fromDate(_selectedDate!))
-        .where(
-          'status',
-          whereIn: ['pending', 'price_proposed', 'buyer_agreed', 'completed'],
-        )
-        .get();
+      final doc = await requestRef.get();
 
-    if (existing.docs.isNotEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Seller not available on this date")),
-      );
-      return;
-    }
+      if (doc.exists) {
+        final status = doc['status'] ?? 'pending';
+        if (status == 'completed') {
+          // Request already completed → do not overwrite
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                "You have already completed this booking. Payment/Review available.",
+              ),
+            ),
+          );
 
-    // Save booking request (use user id as doc id to avoid duplicates)
-    final requestRef = serviceRef.doc(user.uid);
-    await requestRef.set({
-      'userId': user.uid,
-      'userEmail': user.email,
-      'userName': user.displayName ?? user.email,
-      'status': 'pending',
-      'timestamp': FieldValue.serverTimestamp(),
-      'bookingDate': Timestamp.fromDate(_selectedDate!),
-      'buyerAgreed': null,
-      'proposedPrice': null,
-      'paymentStatus': null,
-      'buyerReview': null,
-    });
+          // Reload the request so _requestData is updated for "Pay Now" or review
+          await _loadActiveRequest();
+          return;
+        } else if (status != 'cancelled') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("You already have an active booking")),
+          );
+          return;
+        }
+      }
 
-    setState(() {
-      _requestData = {
+      // Save booking request (buyer-safe, only their own doc)
+      await requestRef.set({
         'userId': user.uid,
         'userEmail': user.email,
+        'userName': user.displayName ?? user.email,
         'status': 'pending',
+        'timestamp': FieldValue.serverTimestamp(),
         'bookingDate': Timestamp.fromDate(_selectedDate!),
         'buyerAgreed': null,
         'proposedPrice': null,
-      };
-    });
+        'paymentStatus': null,
+        'buyerReview': null,
+      });
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Booking requested!')));
+      setState(() {
+        _requestData = {
+          'userId': user.uid,
+          'status': 'pending',
+          'bookingDate': Timestamp.fromDate(_selectedDate!),
+        };
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Booking requested successfully!')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to request booking: $e')));
+      debugPrint('Error in requestBooking: $e');
+    }
   }
 
   Future<void> _proposePrice() async {
@@ -327,6 +368,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
   Future<void> _completeJob() async {
     if (_requestData == null || !_isSeller) return;
     final buyerId = _requestData!['userId'];
+
     await FirebaseFirestore.instance
         .collection('services')
         .doc(widget.serviceId)
@@ -334,7 +376,12 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
         .doc(buyerId)
         .update({'status': 'completed'});
 
-    setState(() => _requestData!['status'] = 'completed');
+    // Reload request to update UI
+    await _loadActiveRequest();
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Job marked as completed!')));
   }
 
   Future<void> _submitReview() async {
@@ -354,40 +401,77 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
       'timestamp': FieldValue.serverTimestamp(),
     };
 
-    // 1) Save inside requests for buyer tracking
-    await FirebaseFirestore.instance
-        .collection('services')
-        .doc(widget.serviceId)
-        .collection('requests')
-        .doc(user.uid)
-        .update({'buyerReview': reviewData});
+    try {
+      // Save inside requests for buyer tracking
+      await FirebaseFirestore.instance
+          .collection('services')
+          .doc(widget.serviceId)
+          .collection('requests')
+          .doc(user.uid)
+          .update({'buyerReview': reviewData});
 
-    // 2) Save in separate 'reviews' collection for easy HomePage queries
-    await FirebaseFirestore.instance
-        .collection('services')
-        .doc(widget.serviceId)
-        .collection('reviews')
-        .add(reviewData);
+      // Save in separate 'reviews' collection
+      await FirebaseFirestore.instance
+          .collection('services')
+          .doc(widget.serviceId)
+          .collection('reviews')
+          .add(reviewData);
 
-    setState(() {
-      _requestData!['buyerReview'] = reviewData;
-      _reviews.add(reviewData);
-      _reviewController.clear();
-      _selectedRating = 0;
-    });
+      // Clear local state
+      setState(() {
+        _reviews.add(reviewData);
+        _reviewController.clear();
+        _selectedRating = 0;
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Review submitted!')));
+        // 🔹 Reset the request so the user sees fresh booking options
+        _requestData = null;
+        _selectedDate = null;
+      });
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Review submitted!')));
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to submit review: $e')));
+      debugPrint('Error submitting review: $e');
+    }
   }
 
-  void _payNow() {
-    Navigator.push(
+  Future<void> _payNow() async {
+    if (_requestData == null) return;
+
+    // Navigate to BankDetailsPage and wait for payment result
+    final result = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (_) => BankDetailsPage(serviceId: widget.serviceId),
       ),
     );
+
+    // If payment successful, update local request data
+    if (result == true) {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      final requestRef = FirebaseFirestore.instance
+          .collection('services')
+          .doc(widget.serviceId)
+          .collection('requests')
+          .doc(user.uid);
+
+      await requestRef.update({'paymentStatus': 'paid'});
+
+      // Reload request to update UI
+      await _loadActiveRequest();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Payment successful! You can now leave a review.'),
+        ),
+      );
+    }
   }
 
   void _openChat() {
@@ -854,6 +938,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Chat button
                 ElevatedButton.icon(
                   onPressed: _openChat,
                   icon: const Icon(Icons.chat),
@@ -866,7 +951,8 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                   label: const Text('Chat'),
                 ),
                 const SizedBox(height: 12),
-                // Only for buyers and pending requests
+
+                // Buyer cancels pending request
                 if (!_isSeller && _requestData!['status'] == 'pending')
                   ElevatedButton(
                     onPressed: _cancelBooking,
@@ -876,6 +962,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                     child: const Text('Cancel Booking'),
                   ),
 
+                // Seller proposes price
                 if (_isSeller &&
                     _requestData!['status'] == 'pending' &&
                     _requestData!['proposedPrice'] == null)
@@ -898,6 +985,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                     ],
                   ),
 
+                // Buyer responds to proposed price
                 if (!_isSeller &&
                     _requestData!['status'] == 'price_proposed' &&
                     _requestData!['buyerAgreed'] == null)
@@ -926,6 +1014,7 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                     ],
                   ),
 
+                // Seller marks job completed
                 if (_isSeller && _requestData!['status'] == 'buyer_agreed')
                   ElevatedButton(
                     onPressed: _completeJob,
@@ -935,9 +1024,37 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                     child: const Text('Mark Job Completed'),
                   ),
 
+                // Buyer "Pay Now" button (shows if job completed & payment not done)
                 if (!_isSeller &&
                     _requestData!['status'] == 'completed' &&
-                    _requestData!['buyerReview'] == null)
+                    (_requestData!['paymentStatus'] == null ||
+                        _requestData!['paymentStatus'] != 'paid'))
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: ElevatedButton(
+                      onPressed: _payNow,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.deepPurple,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 14,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text(
+                        'Pay Now',
+                        style: TextStyle(fontSize: 16, color: Colors.white),
+                      ),
+                    ),
+                  ),
+
+                // Buyer leaves review (after payment)
+                if (!_isSeller &&
+                    _requestData!['status'] == 'completed' &&
+                    _requestData!['buyerReview'] == null &&
+                    _requestData!['paymentStatus'] == 'paid')
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -984,58 +1101,8 @@ class _ServiceDetailsPageState extends State<ServiceDetailsPage>
                       ),
                     ],
                   ),
-
-                if (!_isSeller &&
-                    _requestData!['status'] == 'completed' &&
-                    _requestData!['buyerReview'] != null)
-                  ElevatedButton(
-                    onPressed: _payNow,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.deepPurple,
-                    ),
-                    child: const Text('Pay Now'),
-                  ),
               ],
             ),
-
-          if (_reviews.isNotEmpty) ...[
-            const SizedBox(height: 32),
-            const Text(
-              'Previous Reviews',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.deepPurple,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Column(
-              children: _reviews.map((r) {
-                final comment = r['comment'] ?? '';
-                final rating = r['rating'] ?? 0;
-                return Card(
-                  margin: const EdgeInsets.symmetric(vertical: 6),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  elevation: 3,
-                  child: ListTile(
-                    title: Text(comment),
-                    subtitle: Row(
-                      children: List.generate(
-                        5,
-                        (index) => Icon(
-                          index < rating ? Icons.star : Icons.star_border,
-                          color: Colors.amber,
-                          size: 16,
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-          ],
         ],
       ),
     );
